@@ -1,2 +1,14 @@
 # Help_me_clean
-An app for kids and kidults gamifying the house cleaning
+
+Домашнее приложение, которое учит ребёнка убираться: ведёт по комнатам его
+дома, показывает камерой, что именно надо убрать, и превращает это в короткие
+выигрываемые раунды. Для детей и «kidults».
+
+Приложение из семейства **Twin**: PWA без сборки + отдельный Firebase-проект
+(Auth + Firestore + Storage) + Cloudflare Worker для вызовов LLM с vision.
+
+## Документы
+
+- [`docs/AUTH-i-pereispolzovanie.md`](docs/AUTH-i-pereispolzovanie.md) —
+  двухуровневая авторизация «пользователь → семья» по коду (как в Twin Things),
+  что переиспользовать из Twin Things, архитектурные улучшения и упрощения.
