@@ -6,6 +6,7 @@ import {
   makeJoinCode, normalizeJoinCode, isValidJoinCode,
   makeFamilyId, makeSessionId, pickActiveFamily,
   ROOM_TYPES, normalizeRoomType, ACTION_IDS, actionCategory, isValidActionCategory,
+  normalizeActionCategory, cleanPlace,
   THEME_IDS, theme, isValidTheme, normalizeTheme, FALLBACK_THEME, rankForCleanups, JEDI_RANKS,
   SPARKLES, sparklesFor, nextSurpriseIn, shouldSurprise,
   emptyRewards, normalizeRewards, cardsForTheme, addCard, addSparkles,
@@ -205,4 +206,31 @@ test('покрытие эталонами: что снято, что нет', ()
   const none = referenceCoverage([], [{ id: 'kitchen' }]);
   assert.deepEqual(none, { rooms: [], covered: 0, total: 0, complete: false });
   assert.equal(referenceCoverage(null, null).total, 0);
+});
+
+test('текстиль вместо одежды: полотенце и тряпка не должны быть «одеждой»', () => {
+  const t = actionCategory('textile');
+  assert.equal(t.id, 'textile');
+  assert.match(t.instruction, /Текстиль/);
+  assert.ok(ACTION_IDS.includes('textile'));
+  assert.ok(!ACTION_IDS.includes('clothes'), 'старой категории в словаре больше нет');
+});
+
+test('старый id clothes продолжает читаться — прогресс и ответы модели не ломаются', () => {
+  assert.equal(normalizeActionCategory('clothes'), 'textile');
+  assert.equal(actionCategory('clothes').id, 'textile');
+  assert.ok(isValidActionCategory('clothes'), 'сохранённые сессии не становятся мусором');
+  assert.equal(normalizeActionCategory('выдумка'), 'выдумка');
+  const scan = sanitizeScan({ mode: 'closeup', items: [
+    { id: 1, label: 'полотенце', category: 'clothes', box: [0, 0, 0.2, 0.2] },
+  ] });
+  assert.equal(scan.items[0].category, 'textile', 'ответ модели на старом языке приводится к новому');
+});
+
+test('имя места приводится к сравнимому виду — иначе лимит обходится кавычками', () => {
+  assert.equal(cleanPlace('«Раковина».  '), 'раковина');
+  assert.equal(cleanPlace('Стол   у окна'), 'стол у окна');
+  assert.equal(cleanPlace(null), '');
+  assert.equal(cleanPlace('a'.repeat(80)).length, 40, 'длинное описание подрезается');
+  assert.equal(sanitizeScan({ mode: 'closeup', place: 'Раковина', items: [] }).place, 'раковина');
 });

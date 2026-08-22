@@ -8,7 +8,7 @@
 // Состояние раунда неизменяемое: каждая функция возвращает НОВЫЙ раунд
 // (как addCard/addSparkles в family-core). Экран хранит последний и перерисовывается.
 import {
-  ACTION_IDS, actionCategory, makeSessionId,
+  ACTION_IDS, actionCategory, normalizeActionCategory, makeSessionId,
   SPARKLES, normalizeRewards, nextSurpriseIn, shouldSurprise,
 } from './family-core.js';
 
@@ -17,11 +17,12 @@ import {
 // («сначала мусор, потом посуда…») и перестаёт тратить внимание на выбор.
 // Начало — самое заметное и быстрое (мусор, посуда): ранняя победа держит заход.
 // Конец — мелкий разбор (канцелярия) и «чужое», куда сил уже почти не надо.
-export const ROUND_ORDER = ['trash', 'dishes', 'clothes', 'toys', 'paper', 'stationery', 'belongs_elsewhere'];
+export const ROUND_ORDER = ['trash', 'dishes', 'textile', 'toys', 'paper', 'stationery', 'belongs_elsewhere'];
 const ORDER_INDEX = new Map(ROUND_ORDER.map((id, i) => [id, i]));
 export function orderIndex(category) {
-  const i = ORDER_INDEX.get(category);
-  return i === undefined ? ROUND_ORDER.length + ACTION_IDS.indexOf(category) : i;
+  const cat = normalizeActionCategory(category);
+  const i = ORDER_INDEX.get(cat);
+  return i === undefined ? ROUND_ORDER.length + ACTION_IDS.indexOf(cat) : i;
 }
 // Сортировка категорий в порядке раунда (вход не мутирует).
 export function orderCategories(categories) {
@@ -65,6 +66,8 @@ export function buildRound(scanned, {
   return {
     id: id || makeSessionId(now, rand),
     mode: overview ? 'overview' : 'closeup',
+    // Что именно сняли («раковина», «стол у окна») — ключ дневного лимита.
+    place: scanned?.place || '',
     estimatedMinutes: overview ? (Number(scanned?.estimated_minutes) || null) : null,
     roomId, roomName, themeId, profileId,
     startedAt: new Date(now()).toISOString(),
@@ -226,6 +229,7 @@ export function sessionFromRound(round) {
     profileId: round.profileId || null,
     roomId: round.roomId || null,
     roomName: round.roomName || '',
+    place: round.place || '',
     themeId: round.themeId || null,
     startedAt: round.startedAt,
     finishedAt: round.finishedAt,

@@ -30,6 +30,7 @@ test('порядок цветов фиксирован и покрывает в�
   assert.deepEqual([...ROUND_ORDER].sort(), [...ACTION_IDS].sort());
   assert.equal(ROUND_ORDER[0], 'trash'); // ранняя быстрая победа
   assert.deepEqual(orderCategories(['paper', 'trash', 'toys']), ['trash', 'toys', 'paper']);
+  assert.ok(ROUND_ORDER.includes('textile') && !ROUND_ORDER.includes('clothes'));
   assert.deepEqual(orderCategories(['paper', 'выдумка']), ['paper', 'выдумка']); // неизвестное — в конец
 });
 
@@ -193,7 +194,7 @@ const RAW_ROUTE = {
   route: [
     { step: 1, label: 'синий грузовик', point: [0.22, 0.71], action: 'в ящик с игрушками', category: 'toys' },
     { step: 2, label: 'мишка', point: [0.40, 0.62], action: 'в ящик с игрушками', category: 'toys' },
-    { step: 3, label: 'носки', point: [0.70, 0.80], action: 'в корзину', category: 'clothes' },
+    { step: 3, label: 'носки', point: [0.70, 0.80], action: 'в корзину', category: 'textile' },
   ],
   estimated_minutes: 6,
 };
@@ -208,7 +209,7 @@ test('обход комнаты: шаг — одна точка, порядок 
   assert.equal(r.estimatedMinutes, 6);
   assert.equal(r.steps.length, 3, 'три точки — три шага, а не два цвета');
   assert.deepEqual(r.steps.map(s => s.itemIds), [[1], [2], [3]]);
-  assert.deepEqual(r.steps.map(s => s.category), ['toys', 'toys', 'clothes'],
+  assert.deepEqual(r.steps.map(s => s.category), ['toys', 'toys', 'textile'],
     'порядок обхода сохранён: гонять ребёнка по комнате «по нашему порядку цветов» нельзя');
   assert.equal(r.items[0].point.length, 2);
   assert.equal(r.items[0].box, undefined, 'у точек нет рамок');
@@ -243,7 +244,7 @@ test('текст для /verify в обходе не повторяет одну
   r = completeStep(r, { now: fixed(1), rand: () => 0 });
   r = completeStep(r, { now: fixed(2), rand: () => 0 }); // обе игрушки
   r = completeStep(r, { now: fixed(3), rand: () => 0 }); // носки
-  assert.equal(roundTaskText(r), 'Игрушки в свой ящик; Одежду в корзину или в шкаф');
+  assert.match(roundTaskText(r), /^Игрушки в свой ящик; Текстиль/);
   assert.equal(roundTaskText(route0()), 'убрать комнату');
 });
 
@@ -253,4 +254,15 @@ test('в прогресс пишется режим — иначе истори�
   assert.equal(s.itemsTotal, 3);
   assert.equal(JSON.stringify(s).includes('0.22'), false, 'координаты точек наружу не уходят');
   assert.equal(sessionFromRound(round0()).mode, 'closeup');
+});
+
+test('место из скана едет в раунд и в прогресс — по нему считается дневной лимит', () => {
+  const r = buildRound(sanitizeScan({
+    mode: 'closeup', place: '«Раковина»',
+    items: [{ id: 1, label: 'тюбик', category: 'trash', box: [0, 0, 0.1, 0.1] }],
+  }), { roomId: 'bath', roomName: 'Ванная', now: fixed(0), rand: () => 0 });
+  assert.equal(r.place, 'раковина');
+  assert.equal(sessionFromRound(r).place, 'раковина');
+  const noPlace = buildRound(sanitizeScan({ mode: 'closeup', items: [] }), { now: fixed(0), rand: () => 0 });
+  assert.equal(noPlace.place, '', 'сканер не назвал место — не выдумываем');
 });

@@ -72,38 +72,58 @@ export async function parseHome(text) {
 
 // ── §223/§268 — стоп-кадр → подсветка (closeup) или маршрут (overview) ──────
 const colorDict = () => ACTION_CATEGORIES
-  .map(c => `${c.id} — ${c.instruction} (${c.target})`).join('\n');
+  .map(c => `${c.id} — ${c.instruction} (${c.target})`).join('\n')
+  + `\n\nПро textile: сюда идёт ВСЁ тканевое — одежда, полотенца, тряпки, носки,
+постельное бельё, коврики. Не пытайся решать, чистое оно или грязное.`;
 
-function scanSystem(mode) {
+// Имя предмета для ребёнка: конкретное, если видно, общее — если нет.
+const LABEL_RULE = `- label — как вещь назвал бы ребёнок. Если понятно, что это —
+  называй конкретно («джинсы», «носки», «кружка»); если не понятно — общим
+  словом («полотенце», «тряпка», «коробка»). Не выдумывай подробностей.`;
+
+// Место в кадре — ключ дневного лимита: одна и та же раковина не должна
+// приносить награду бесконечно, но другой угол той же комнаты — должен.
+const placeRule = (surfaces) => `- place — КОРОТКОЕ название места, которое снято
+  (2–3 слова, без предлогов): «раковина», «стол у окна», «пол у двери».${
+  surfaces?.length ? `\n  Если подходит что-то из списка поверхностей этой комнаты — возьми ОТТУДА
+  дословно: ${surfaces.join(', ')}.` : ''}
+  Одно и то же место на разных фото называй ОДИНАКОВО.`;
+
+function scanSystem(mode, surfaces) {
   const dict = colorDict();
+  const places = placeRule(surfaces);
   if (mode === 'overview') {
     return `Ты помощник по уборке. На фото — комната. Составь маршрут обхода предметов на полу/поверхностях. Верни ТОЛЬКО JSON:
-{"mode":"overview","route":[{"step":1,"label":"синий грузовик","point":[0.22,0.71],"action":"в ящик с игрушками","category":"toys"}],"estimated_minutes":6}
+{"mode":"overview","place":"детская у окна","route":[{"step":1,"label":"синий грузовик","point":[0.22,0.71],"action":"в ящик с игрушками","category":"toys"}],"estimated_minutes":6}
 
 Правила:
 - category — РОВНО ОДИН id из списка ниже, не выдумывай:
 ${dict}
+${LABEL_RULE}
+${places}
 - point — [x,y] в долях кадра 0..1 (x слева направо, y сверху вниз).
 - Порядок маршрута — сначала всё однотипное (все игрушки), потом следующая группа: меньше переключений внимания.
 - Если человек в кадре — верни {"person_detected":true}.`;
   }
   return `Ты помощник по уборке. На фото — стол/полка/поверхность крупным планом. Найди предметы, которые надо убрать, и отнеси каждый к ОДНОЙ категории действия. Верни ТОЛЬКО JSON:
-{"mode":"closeup","items":[{"id":1,"label":"тетрадь","category":"paper","box":[0.12,0.34,0.28,0.51],"confidence":0.86}],"surface_state":"messy"}
+{"mode":"closeup","place":"раковина","items":[{"id":1,"label":"тетрадь","category":"paper","box":[0.12,0.34,0.28,0.51],"confidence":0.86}],"surface_state":"messy"}
 
 Правила:
 - category — РОВНО ОДИН id из списка ниже, не выдумывай:
 ${dict}
+${LABEL_RULE}
+${places}
 - box — прямоугольник вокруг предмета в НОРМАЛИЗОВАННЫХ углах [x1,y1,x2,y2] (верхний-левый и нижний-правый), каждое число 0..1.
 - Не выдумывай предметов, которых нет. Один предмет — один объект.
 - Если человек в кадре — верни {"person_detected":true}.`;
 }
 
-export async function scan(base64, { mode = 'closeup', roomType, roomName } = {}) {
+export async function scan(base64, { mode = 'closeup', roomType, roomName, surfaces } = {}) {
   const hint = `Комната: ${roomName || '—'}${roomType ? ` (тип: ${roomType})` : ''}. Определи предметы и верни JSON по схеме.`;
   return jsonCall(
     { model: MODEL, max_tokens: 1500, temperature: 0,
       messages: [
-        { role: 'system', content: scanSystem(mode) },
+        { role: 'system', content: scanSystem(mode, surfaces) },
         { role: 'user', content: [dataUrl(base64), { type: 'text', text: hint }] },
       ] },
     sanitizeScan,

@@ -72,14 +72,25 @@ export const ACTION_CATEGORIES = [
   { id: 'stationery',       color: '#25A55A', emoji: '🟢', instruction: 'Поставь карандаши и ручки в стакан', target: 'Стакан' },
   { id: 'trash',            color: '#8B5CF6', emoji: '🟣', instruction: 'Выброси мусор', target: 'Ведро' },
   { id: 'dishes',           color: '#F0871E', emoji: '🟠', instruction: 'Отнеси посуду', target: 'Кухня' },
-  { id: 'clothes',          color: '#F5C518', emoji: '🟡', instruction: 'Одежду в корзину или в шкаф', target: 'Корзина' },
+  { id: 'textile',          color: '#F5C518', emoji: '🟡', instruction: 'Текстиль: грязное в корзину, чистое на место', target: 'Корзина или полка' },
   { id: 'toys',             color: '#F472B6', emoji: '🩷', instruction: 'Игрушки в свой ящик', target: 'Ящик' },
   { id: 'belongs_elsewhere',color: '#9AA3AE', emoji: '⚪️', instruction: 'Это живёт в другой комнате', target: 'Корзина «чужое»' },
 ];
 export const ACTION_IDS = ACTION_CATEGORIES.map(c => c.id);
 const ACTION_BY_ID = new Map(ACTION_CATEGORIES.map(c => [c.id, c]));
-export function actionCategory(id) { return ACTION_BY_ID.get(id) || null; }
-export function isValidActionCategory(id) { return ACTION_BY_ID.has(id); }
+
+// Старые id, которые ещё могут прийти из сохранённого прогресса или от модели.
+// clothes → textile: «одежда» заставляла и модель, и ребёнка спотыкаться на
+// полотенцах, тряпках и постельном белье — а это ровно то, что валяется чаще
+// всего. Конкретное название вещи никуда не делось: оно в label предмета
+// («джинсы», «полотенце»), категория же говорит, ЧТО С ЭТИМ ДЕЛАТЬ.
+export const CATEGORY_ALIASES = { clothes: 'textile' };
+export function normalizeActionCategory(id) {
+  const key = String(id || '');
+  return CATEGORY_ALIASES[key] || key;
+}
+export function actionCategory(id) { return ACTION_BY_ID.get(normalizeActionCategory(id)) || null; }
+export function isValidActionCategory(id) { return ACTION_BY_ID.has(normalizeActionCategory(id)); }
 
 // ── Темы (§43 ТЗ). Механика одна, различаются палитра/тексты/шаг/озвучка ────
 // Вынесены отдельно, чтобы подменить франшизные отсылки за час (§51).
@@ -140,7 +151,7 @@ export function emptyRewards() {
     cleanupsTotal: 0,
     cardsByTheme: Object.fromEntries(THEME_IDS.map(t => [t, []])),
     realRewards: [],   // покупки реальных наград, см. js/shop-core.js
-    dailyRooms: { day: null, rooms: {} }, // дневной лимит по комнатам, см. js/limits-core.js
+    dailyRooms: { day: null, rooms: {}, places: {} }, // дневной лимит, см. js/limits-core.js
     lastSurpriseAt: null,
   };
 }
@@ -149,14 +160,21 @@ export function emptyRewards() {
 // приводится к предсказуемому виду; смысл и правила — в js/limits-core.js.
 function normalizeDailyRooms(raw) {
   const d = (raw && typeof raw === 'object') ? raw : {};
-  const rooms = {};
-  if (d.rooms && typeof d.rooms === 'object') {
-    for (const [k, v] of Object.entries(d.rooms)) {
-      const n = Number(v);
-      if (Number.isFinite(n) && n > 0) rooms[k] = Math.floor(n);
+  const counters = (src) => {
+    const out = {};
+    if (src && typeof src === 'object') {
+      for (const [k, v] of Object.entries(src)) {
+        const n = Number(v);
+        if (Number.isFinite(n) && n > 0) out[k] = Math.floor(n);
+      }
     }
-  }
-  return { day: typeof d.day === 'string' ? d.day : null, rooms };
+    return out;
+  };
+  return {
+    day: typeof d.day === 'string' ? d.day : null,
+    rooms: counters(d.rooms),   // страховочный счётчик по комнате
+    places: counters(d.places), // основной: по конкретному месту
+  };
 }
 // Приводит документ наград к актуальной форме. Мигрирует старый плоский
 // cards: [id] — карточки без темы уезжают в коллекцию фолбэк-темы.
@@ -258,9 +276,9 @@ export function sanitizeScan(raw) {
         label: String(s.label || '').trim(),
         point: s.point.map(Number),
         action: String(s.action || '').trim(),
-        category: s.category,
+        category: normalizeActionCategory(s.category),
       }));
-    return { mode, route, estimated_minutes: Number(r.estimated_minutes) || null };
+    return { mode, route, place: cleanPlace(r.place), estimated_minutes: Number(r.estimated_minutes) || null };
   }
   const items = (Array.isArray(r.items) ? r.items : [])
     .filter(it => it && isValidActionCategory(it.category))
@@ -270,7 +288,7 @@ export function sanitizeScan(raw) {
       return {
         id: Number.isInteger(it.id) ? it.id : i + 1,
         label: String(it.label || '').trim(),
-        category: it.category,
+        category: normalizeActionCategory(it.category),
         box,
         confidence: Number(it.confidence) || null,
       };
@@ -281,7 +299,19 @@ export function sanitizeScan(raw) {
     .map(cat => ({ category: cat, count: items.filter(it => it.category === cat).length }))
     .filter(g => g.count > 0)
     .map(g => ({ ...g, instruction: actionCategory(g.category).instruction }));
-  return { mode, items, groups, surface_state: r.surface_state === 'clean' ? 'clean' : 'messy' };
+  return { mode, items, groups, place: cleanPlace(r.place), surface_state: r.surface_state === 'clean' ? 'clean' : 'messy' };
+}
+
+// «Место» в кадре — что именно сняли: раковина, стол у окна, пол у двери.
+// Нужно, чтобы дневной лимит считался ПО МЕСТУ, а не по всей комнате: у комнаты
+// много углов, и запрещать её целиком после двух уборок неправильно.
+// Приводим к сравнимому виду: регистр, пробелы, кавычки и точки — не различия.
+export function cleanPlace(raw) {
+  return String(raw || '').toLowerCase()
+    .replace(/[«»"'`.,;:!?()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 40);
 }
 
 // Санитайзинг ответа /verify (§292): мягкая оценка, статусы done/retake.

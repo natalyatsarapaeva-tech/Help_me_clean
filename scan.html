@@ -169,6 +169,9 @@
           <div class="muted" id="task-hint" style="font-size:14px">Можно отмечать вещи пальцем — или сразу «Готово».</div>
           <button class="btn btn-ghost" id="btn-skip">Тут такого нет</button>
           <div class="card surprise hidden" id="surprise">🎁 <span id="surprise-text">Сюрприз!</span></div>
+          <!-- Место сегодня уже отработано: убирать не мешаем, но говорим об
+               этом ДО работы, а не после неё. -->
+          <div class="card hidden" id="place-limit" style="border:3px dashed var(--line);font-size:15px"></div>
         </div>
       </div>
     </section>
@@ -232,7 +235,10 @@
       getHome, getProfile, getSettings, getReference, getRewards, saveRewards, saveProgress,
       listCards, getActiveProfileId,
     } from './js/store.js';
-    import { awardRound, isRoomExhausted, roomsLeft, ROOM_DAILY_LIMIT } from './js/limits-core.js';
+    import {
+      awardRound, isPlaceExhausted, isRoomExhausted, placeCount, roomCount,
+      PLACE_DAILY_LIMIT, ROOM_DAILY_LIMIT,
+    } from './js/limits-core.js';
     import { scan, verify, reward } from './js/ai.js';
     import { startCamera, stopCamera, cameraErrorText } from './js/camera.js';
     import { prepareScanFrame, revokeFrame } from './js/image.js';
@@ -403,7 +409,9 @@
       show('step-thinking');
       $('thinking-text').textContent = 'Смотрю, что тут у тебя…';
       try {
-        const scanned = await scan(frame.base64, { mode, roomType: room?.type, roomName: room?.name });
+        const scanned = await scan(frame.base64, {
+          mode, roomType: room?.type, roomName: room?.name, surfaces: room?.surfaces,
+        });
         round = buildRound(scanned, {
           roomId: room?.id || null, roomName: room?.name || '', themeId: th.id, profileId,
         });
@@ -414,6 +422,12 @@
           return;
         }
         $('shot').src = frame.url;
+        // Награда за это место на сегодня исчерпана? Скажем сразу.
+        const spent = myRewards && isPlaceExhausted(myRewards, round.roomId, round.place);
+        $('place-limit').textContent = spent
+          ? `${round.place ? `«${round.place}»` : 'Это место'} сегодня уже убирали ${PLACE_DAILY_LIMIT} раза — искорок и карточки за него сегодня не будет. Другое место в этой комнате считается.`
+          : '';
+        $('place-limit').classList.toggle('hidden', !spent);
         setBusy(true);
         startTimer();
         show('step-round');
@@ -512,7 +526,9 @@
         showCard(won);
         if (!award.awarded) {
           $('done-sparkles').textContent = '0';
-          $('limit-note').textContent = `Эту комнату сегодня уже убирали ${award.limit} раза — искорки за неё сегодня всё. Завтра снова.`;
+          $('limit-note').textContent = award.reason === 'place-limit'
+            ? `${award.place ? `«${award.place}»` : 'Это место'} сегодня уже убирали ${award.limit} раза — искорки за него сегодня всё. Завтра снова.`
+            : `В этой комнате сегодня уже ${award.limit} уборок — искорки за неё сегодня всё. Завтра снова.`;
           $('limit-note').classList.remove('hidden');
         }
         $('done-extra').textContent = `Всего у тебя: ${th.currencyEmoji} ${next.currency} · заработано за всё время: ${next.earnedTotal} · уборок: ${next.cleanupsTotal}`;
@@ -546,10 +562,11 @@
     // Комната выбрана — спрашиваем, что именно убираем.
     function goMode() {
       $('mode-title').textContent = room ? `${room.icon || '🏠'} ${room.name}: что убираем?` : 'Что убираем?';
-      // Комната на сегодня отработана — не запрещаем, но предупреждаем заранее.
+      // Лимит теперь на МЕСТО, а не на комнату, и место известно только после
+      // съёмки. Здесь предупреждаем лишь про страховочный предел на комнату.
       const done = myRewards && isRoomExhausted(myRewards, room?.id || null);
       $('mode-limit').textContent = done
-        ? `Эту комнату сегодня уже убирали ${ROOM_DAILY_LIMIT} раза — искорок и карточки за неё сегодня не будет. Убрать всё равно можно, а завтра она снова считается.`
+        ? `В этой комнате сегодня уже ${ROOM_DAILY_LIMIT} уборок — искорок за неё сегодня больше не будет. Убрать всё равно можно, завтра снова считается.`
         : '';
       $('mode-limit').classList.toggle('hidden', !done);
       $('btn-back-rooms').classList.toggle('hidden', rooms.length < 2);
@@ -610,11 +627,12 @@
     // ── Выбор комнаты ──
     function renderRooms() {
       $('rooms').innerHTML = rooms.map(r => {
-        const left = myRewards ? roomsLeft(myRewards, r.id) : ROOM_DAILY_LIMIT;
+        const done = myRewards ? roomCount(myRewards, r.id) : 0;
+        const full = myRewards && isRoomExhausted(myRewards, r.id);
         return `
         <button class="avatar-btn room-btn" data-room="${esc(r.id)}">${esc(r.icon || '🏠')}
           <span class="name">${esc(r.name)}</span>
-          <span class="muted" style="font-size:13px">${left ? `осталось ${left} на сегодня` : 'на сегодня всё'}</span>
+          <span class="muted" style="font-size:13px">${full ? 'на сегодня всё' : (done ? `сегодня уборок: ${done}` : 'сегодня ещё не убирали')}</span>
         </button>`;
       }).join('');
       $('rooms').querySelectorAll('[data-room]').forEach(el => {

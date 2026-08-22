@@ -6,8 +6,9 @@ import {
   purchases, pendingPurchases, givenPurchases, markGiven, shopView,
 } from '../js/shop-core.js';
 import {
-  ROOM_DAILY_LIMIT, dayKey, roomKey, roomCount, roomsLeft, isRoomExhausted,
-  registerRoomCleanup, awardRound,
+  PLACE_DAILY_LIMIT, ROOM_DAILY_LIMIT, dayKey, roomKey, placeKey,
+  roomCount, placeCount, placesLeft, isPlaceExhausted, isRoomExhausted,
+  registerCleanup, awardRound,
 } from '../js/limits-core.js';
 import { emptyRewards, normalizeRewards, addSparkles, rankForCleanups, SPARKLES } from '../js/family-core.js';
 import { buildRound, completeStep, finishRound } from '../js/round-core.js';
@@ -110,73 +111,96 @@ test('витрина ребёнка: что по карману, сколько 
   assert.equal(v.nextGoal.missing, 70, 'до цели 70 искорок');
 });
 
-// ── Дневной лимит по комнате ────────────────────────────────────────────────
-const roundIn = (roomId) => {
-  let r = buildRound(sanitizeScan({ mode: 'closeup', items: [{ id: 1, label: 'чек', category: 'paper', box: [0, 0, 0.1, 0.1] }] }),
-    { roomId, roomName: roomId, now: at(0), rand: () => 0 });
+// ── Дневной лимит по МЕСТУ ──────────────────────────────────────────────────
+// Лимит держит место в кадре («раковина», «стол у окна»), а не комната целиком:
+// у комнаты много углов, и запирать её после двух уборок было бы неправильно.
+const roundAt = (roomId, place) => {
+  let r = buildRound(sanitizeScan({
+    mode: 'closeup', place,
+    items: [{ id: 1, label: 'чек', category: 'paper', box: [0, 0, 0.1, 0.1] }],
+  }), { roomId, roomName: roomId, now: at(0), rand: () => 0 });
   r = completeStep(r, { now: at(1), rand: () => 0 });
   return finishRound(r, { done: true }, { now: at(2) });
 };
 const DAY1 = Date.parse('2026-08-22T10:00:00');
 const DAY1_LATE = Date.parse('2026-08-22T21:00:00');
 const DAY2 = Date.parse('2026-08-23T09:00:00');
-const REWARD_PER_ROUND = SPARKLES.step + SPARKLES.room; // 1 шаг + комната
+const REWARD_PER_ROUND = SPARKLES.step + SPARKLES.room;
 
-test('день — локальный, ключ комнаты не теряется без карты дома', () => {
+test('день локальный; ключ места переживает кавычки и регистр', () => {
   assert.equal(dayKey(Date.parse('2026-08-22T10:00:00')), '2026-08-22');
-  assert.equal(roomKey(null), '__no_room', 'уборка без комнаты тоже считается — иначе лимит обходится');
-  assert.equal(roomKey('maya'), 'maya');
+  assert.equal(roomKey(null), '__no_room', 'уборка без комнаты тоже считается');
+  assert.equal(placeKey('bath', '«Раковина» '), placeKey('bath', 'раковина'),
+    'одно место, названное по-разному оформленно, — один ключ');
+  assert.notEqual(placeKey('bath', 'раковина'), placeKey('kitchen', 'раковина'),
+    'раковина в ванной и на кухне — разные места');
+  assert.equal(placeKey('bath', ''), 'bath::*', 'сканер не назвал место — считаем по комнате');
 });
 
-test('две уборки комнаты в день награждаются, третья — нет', () => {
+test('одно место — две награждаемые уборки, третья без искорок', () => {
   let rewards = emptyRewards();
-  const first = awardRound(rewards, roundIn('maya'), { now: at(DAY1) });
+  const first = awardRound(rewards, roundAt('bath', 'раковина'), { now: at(DAY1) });
   assert.ok(first.awarded);
   assert.equal(first.rewards.currency, REWARD_PER_ROUND);
-  assert.equal(first.count, 1);
 
-  const second = awardRound(first.rewards, roundIn('maya'), { now: at(DAY1) });
+  const second = awardRound(first.rewards, roundAt('bath', 'раковина'), { now: at(DAY1) });
   assert.ok(second.awarded);
-  assert.equal(second.rewards.currency, REWARD_PER_ROUND * 2);
-  assert.equal(second.rewards.cleanupsTotal, 2);
 
-  const third = awardRound(second.rewards, roundIn('maya'), { now: at(DAY1_LATE) });
+  const third = awardRound(second.rewards, roundAt('bath', 'Раковина'), { now: at(DAY1_LATE) });
   assert.equal(third.awarded, false);
-  assert.equal(third.reason, 'room-limit');
+  assert.equal(third.reason, 'place-limit');
+  assert.equal(third.limit, PLACE_DAILY_LIMIT);
   assert.equal(third.rewards.currency, REWARD_PER_ROUND * 2, 'искорки не начислены');
-  assert.equal(third.rewards.earnedTotal, REWARD_PER_ROUND * 2, 'и в заработанное не ушли');
+  assert.equal(third.rewards.earnedTotal, REWARD_PER_ROUND * 2);
   assert.equal(third.rewards.cleanupsTotal, 2, 'счётчик уборок не накручен');
-  assert.equal(third.limit, ROOM_DAILY_LIMIT);
 });
 
-test('лимит на комнату, а не на приложение: похожий стол в другой комнате не заблокирован', () => {
+test('другое место ТОЙ ЖЕ комнаты награждается — комната не запирается целиком', () => {
   let rewards = emptyRewards();
-  rewards = awardRound(rewards, roundIn('maya'), { now: at(DAY1) }).rewards;
-  rewards = awardRound(rewards, roundIn('maya'), { now: at(DAY1) }).rewards;
-  assert.ok(isRoomExhausted(rewards, 'maya', { now: at(DAY1) }));
+  rewards = awardRound(rewards, roundAt('bath', 'раковина'), { now: at(DAY1) }).rewards;
+  rewards = awardRound(rewards, roundAt('bath', 'раковина'), { now: at(DAY1) }).rewards;
+  assert.ok(isPlaceExhausted(rewards, 'bath', 'раковина', { now: at(DAY1) }));
 
-  const kitchen = awardRound(rewards, roundIn('kitchen'), { now: at(DAY1) });
-  assert.ok(kitchen.awarded, 'кухня со своим столом — своя квота');
-  assert.equal(kitchen.rewards.currency, REWARD_PER_ROUND * 3);
-  assert.equal(roomsLeft(kitchen.rewards, 'kitchen', { now: at(DAY1) }), 1);
-  assert.equal(roomsLeft(kitchen.rewards, 'maya', { now: at(DAY1) }), 0);
+  const floor = awardRound(rewards, roundAt('bath', 'пол у двери'), { now: at(DAY1) });
+  assert.ok(floor.awarded, 'пол в той же ванной — своя квота');
+  assert.equal(floor.rewards.currency, REWARD_PER_ROUND * 3);
+  assert.equal(placesLeft(floor.rewards, 'bath', 'пол у двери', { now: at(DAY1) }), 1);
+  assert.equal(placesLeft(floor.rewards, 'bath', 'раковина', { now: at(DAY1) }), 0);
+  assert.equal(roomCount(floor.rewards, 'bath', at(DAY1)), 3, 'счётчик комнаты тоже растёт');
 });
 
-test('назавтра квота обнуляется, вчерашние числа не копятся в документе', () => {
+test('страховка: если модель называет углы всё новыми словами, комната всё же кончается', () => {
   let rewards = emptyRewards();
-  rewards = awardRound(rewards, roundIn('maya'), { now: at(DAY1) }).rewards;
-  rewards = awardRound(rewards, roundIn('maya'), { now: at(DAY1) }).rewards;
-  assert.equal(roomCount(rewards, 'maya', at(DAY2)), 0, 'новый день — счёт с нуля');
+  for (let i = 0; i < ROOM_DAILY_LIMIT; i++) {
+    const res = awardRound(rewards, roundAt('bath', `угол ${i}`), { now: at(DAY1) });
+    assert.ok(res.awarded, `уборка ${i + 1} должна награждаться`);
+    rewards = res.rewards;
+  }
+  const over = awardRound(rewards, roundAt('bath', 'ещё один угол'), { now: at(DAY1) });
+  assert.equal(over.awarded, false);
+  assert.equal(over.reason, 'room-limit', 'сработал предохранитель на комнату');
+  assert.ok(isRoomExhausted(rewards, 'bath', { now: at(DAY1) }));
+  assert.ok(awardRound(rewards, roundAt('kitchen', 'стол'), { now: at(DAY1) }).awarded,
+    'другая комната при этом свободна');
+});
 
-  const next = awardRound(rewards, roundIn('maya'), { now: at(DAY2) });
+test('назавтра всё обнуляется, вчерашние числа не копятся', () => {
+  let rewards = emptyRewards();
+  rewards = awardRound(rewards, roundAt('bath', 'раковина'), { now: at(DAY1) }).rewards;
+  rewards = awardRound(rewards, roundAt('bath', 'раковина'), { now: at(DAY1) }).rewards;
+  assert.equal(placeCount(rewards, 'bath', 'раковина', at(DAY2)), 0);
+
+  const next = awardRound(rewards, roundAt('bath', 'раковина'), { now: at(DAY2) });
   assert.ok(next.awarded);
   assert.equal(next.rewards.dailyRooms.day, '2026-08-23');
-  assert.deepEqual(next.rewards.dailyRooms.rooms, { maya: 1 }, 'вчерашние комнаты выброшены целиком');
+  assert.deepEqual(next.rewards.dailyRooms.places, { 'bath::раковина': 1 }, 'вчерашние места выброшены');
+  assert.deepEqual(next.rewards.dailyRooms.rooms, { bath: 1 });
 });
 
-test('счётчик лимита переживает нормализацию документа (иначе обнулялся бы при каждой записи)', () => {
-  const r = registerRoomCleanup(emptyRewards(), 'maya', { now: at(DAY1) });
+test('счётчики переживают нормализацию документа (иначе обнулялись бы при записи)', () => {
+  const r = registerCleanup(emptyRewards(), 'bath', 'раковина', { now: at(DAY1) });
   const roundTrip = normalizeRewards(JSON.parse(JSON.stringify(r)));
-  assert.equal(roomCount(roundTrip, 'maya', at(DAY1)), 1);
-  assert.equal(roomCount(normalizeRewards({ dailyRooms: { day: '2026-08-22', rooms: { maya: 'ерунда' } } }), 'maya', at(DAY1)), 0);
+  assert.equal(placeCount(roundTrip, 'bath', 'раковина', at(DAY1)), 1);
+  assert.equal(roomCount(roundTrip, 'bath', at(DAY1)), 1);
+  assert.equal(placeCount(normalizeRewards({ dailyRooms: { day: '2026-08-22', places: { 'bath::раковина': 'ерунда' } } }), 'bath', 'раковина', at(DAY1)), 0);
 });
