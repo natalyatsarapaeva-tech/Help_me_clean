@@ -13,6 +13,12 @@
 <body>
   <div class="wrap">
 
+    <!-- Видимая плашка с точным текстом ошибки (чтобы не лезть в консоль). -->
+    <div id="err-box" class="hidden" style="background:#3a0d0d;color:#ffd7d7;border:1px solid #a33;border-radius:12px;padding:12px 14px;margin-bottom:14px;font-family:ui-monospace,monospace;font-size:13px;white-space:pre-wrap;word-break:break-word;">
+      <strong style="display:block;margin-bottom:6px;font-family:var(--font)">⚠️ Ошибка — скопируй мне этот текст:</strong>
+      <span id="err-text"></span>
+    </div>
+
     <!-- Экран входа ребёнка: аватар + PIN (§137). Показывается, если планшет
          уже провижен родителем. -->
     <section id="screen-child" class="hidden col">
@@ -82,6 +88,18 @@
     let toastTimer;
     const toast = (msg) => { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2200); };
 
+    // Показать точную ошибку прямо на странице (не нужна консоль).
+    function showError(e) {
+      const parts = [];
+      if (e?.code) parts.push('code: ' + e.code);
+      if (e?.step) parts.push('шаг: ' + e.step + ' (' + (e.path || '') + ')');
+      parts.push('message: ' + (e?.message || String(e)));
+      parts.push('project: help-me-clean-7969f');
+      $('err-text').textContent = parts.join('\n');
+      $('err-box').classList.remove('hidden');
+      console.error(e);
+    }
+
     function friendlyError(e) {
       const c = e?.code || '';
       if (c.includes('wrong-password') || c.includes('invalid-credential')) return 'Неверный email или пароль';
@@ -120,11 +138,11 @@
       try {
         if (mode === 'signin') await signInEmail(email, pass); else await registerEmail(email, pass);
         await afterLogin();
-      } catch (e) { console.error('Вход email / afterLogin:', e); toast(friendlyError(e)); }
+      } catch (e) { showError(e); toast(friendlyError(e)); }
     };
     $('btn-google').onclick = async () => {
       try { const cred = await signInGoogle(); if (cred) await afterLogin(); }
-      catch (e) { console.error('Вход Google / afterLogin:', e); toast(friendlyError(e)); }
+      catch (e) { showError(e); toast(friendlyError(e)); }
     };
     $('btn-signout').onclick = async () => { await signOutUser(); location.reload(); };
     $('btn-copy-code').onclick = async () => {
@@ -164,9 +182,8 @@
         } else show('screen-parent');
       } catch (e) {
         // Никогда не оставляем белый экран: показываем вход и сообщение об ошибке.
-        console.error('Старт / afterLogin:', e);
         show(hasChildDevice() ? 'screen-child' : 'screen-parent');
-        toast(friendlyError(e));
+        showError(e);
       }
     })();
   </script>
