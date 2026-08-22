@@ -331,6 +331,34 @@ export async function deleteCard(fid, cardId) {
   await deleteDoc(doc(db, 'families', fid, 'cards', cardId));
 }
 
+// ── Реальные награды (§317) ──────────────────────────────────────────────────
+// Витрину заводит РОДИТЕЛЬ (правила: пишет parent, читают все члены).
+// Покупка сюда не пишет: она меняет только награды самого ребёнка.
+export async function listRealRewards(fid) {
+  const snap = await getDocs(collection(db, 'families', fid, 'realRewards'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+export async function saveRealReward(fid, rewardId, data) {
+  const doc_ = {
+    name: data.name || '', cost: Number(data.cost) || 0, emoji: data.emoji || '🎁',
+    byUid: currentUid(), createdAt: data.createdAt || new Date().toISOString(),
+  };
+  await setDoc(doc(db, 'families', fid, 'realRewards', rewardId), doc_, { merge: true });
+  return { id: rewardId, ...doc_ };
+}
+export async function deleteRealReward(fid, rewardId) {
+  await deleteDoc(doc(db, 'families', fid, 'realRewards', rewardId));
+}
+
+// Родителю — награды всех детей сразу: очередь «что купили и надо выдать».
+export async function listAllRewards(fid) {
+  const profiles = await listProfiles(fid);
+  return Promise.all(profiles.map(async p => ({
+    profile: p,
+    rewards: await getRewards(fid, p.id).catch(() => emptyRewards()),
+  })));
+}
+
 // ── Дом и настройки ──────────────────────────────────────────────────────────
 export async function getHome(fid) {
   const snap = await getDoc(doc(db, 'families', fid, 'home', 'map'));

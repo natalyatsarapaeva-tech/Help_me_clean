@@ -206,9 +206,13 @@ export function formatDuration(ms) {
 // ── Начисление на ребёнка ───────────────────────────────────────────────────
 // Валюта — общая (принадлежит ребёнку, не теме, §49). Счётчик уборок растёт
 // только за подтверждённый проверкой раунд — иначе он перестаёт что-то значить.
+// Заработанное падает в ДВА счётчика: currency (баланс, его тратят на реальные
+// награды) и earnedTotal (за всё время, не убывает — от него ранг и статус).
 export function applyRoundToRewards(rewards, round) {
   const out = normalizeRewards(rewards);
-  out.currency += Number(round?.sparkles) || 0;
+  const gained = Number(round?.sparkles) || 0;
+  out.currency += gained;
+  out.earnedTotal += gained;
   if (round?.finishedAt && round?.verify?.done === true) out.cleanupsTotal += 1;
   return out;
 }

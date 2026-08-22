@@ -60,6 +60,10 @@ service cloud.firestore {
       match /settings/{d}  { allow read: if isMember(); allow write: if isParent(); }
       match /reference/{s} { allow read: if isMember(); allow write: if isParent(); }
       match /cards/{c}     { allow read: if isMember(); allow write: if isParent(); }
+      // Витрина реальных наград: цены назначает родитель, дети только смотрят.
+      // Покупка НЕ пишет сюда — она списывает баланс в наградах самого ребёнка
+      // (.../profiles/{pid}/rewards/current), куда у него и так есть доступ.
+      match /realRewards/{r} { allow read: if isMember(); allow write: if isParent(); }
     }
   }
 }

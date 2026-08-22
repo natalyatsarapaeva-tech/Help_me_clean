@@ -119,6 +119,12 @@ export function rankForCleanups(n) {
 }
 
 // ── Награды (§317). Валюта начисляется только за ЗАКРЫТЫЕ шаги. ──────────────
+// ДВА числа, а не одно:
+//   currency    — БАЛАНС: сколько можно потратить на реальную награду сейчас;
+//   earnedTotal — сколько заработано ЗА ВСЁ ВРЕМЯ: не убывает никогда.
+// Разделены ради покупок: тратить надо, а обнулять достигнутое нельзя (§336).
+// Ранг и «сколько ты уже наработал» считаются от earnedTotal и cleanupsTotal —
+// покупка мороженого не понижает ребёнка из Рыцаря обратно в Падаваны.
 export const SPARKLES = { step: 1, room: 5, day: 15 };
 export function sparklesFor(kind) { return SPARKLES[kind] || 0; }
 
@@ -129,12 +135,28 @@ export function sparklesFor(kind) { return SPARKLES[kind] || 0; }
 //   джедаев свои. Смена темы показывает другую витрину, ничего не отнимая.
 export function emptyRewards() {
   return {
-    currency: 0,
+    currency: 0,      // баланс: тратится покупками
+    earnedTotal: 0,   // заработано за всё время: только растёт
     cleanupsTotal: 0,
     cardsByTheme: Object.fromEntries(THEME_IDS.map(t => [t, []])),
-    realRewards: [],
+    realRewards: [],   // покупки реальных наград, см. js/shop-core.js
+    dailyRooms: { day: null, rooms: {} }, // дневной лимит по комнатам, см. js/limits-core.js
     lastSurpriseAt: null,
   };
+}
+// Счётчик «сколько раз сегодня убирали каждую комнату». Форма живёт здесь,
+// потому что normalizeRewards — единственное место, где документ наград
+// приводится к предсказуемому виду; смысл и правила — в js/limits-core.js.
+function normalizeDailyRooms(raw) {
+  const d = (raw && typeof raw === 'object') ? raw : {};
+  const rooms = {};
+  if (d.rooms && typeof d.rooms === 'object') {
+    for (const [k, v] of Object.entries(d.rooms)) {
+      const n = Number(v);
+      if (Number.isFinite(n) && n > 0) rooms[k] = Math.floor(n);
+    }
+  }
+  return { day: typeof d.day === 'string' ? d.day : null, rooms };
 }
 // Приводит документ наград к актуальной форме. Мигрирует старый плоский
 // cards: [id] — карточки без темы уезжают в коллекцию фолбэк-темы.
@@ -150,11 +172,15 @@ export function normalizeRewards(raw) {
     const legacy = byTheme[FALLBACK_THEME] || [];
     byTheme[FALLBACK_THEME] = Array.from(new Set([...legacy, ...r.cards]));
   }
+  const currency = Number(r.currency) || 0;
   return {
-    currency: Number(r.currency) || 0,
+    currency,
+    // Миграция старых документов: до появления покупок числа совпадали.
+    earnedTotal: Math.max(Number(r.earnedTotal) || 0, currency),
     cleanupsTotal: Number(r.cleanupsTotal) || 0,
     cardsByTheme: byTheme,
     realRewards: Array.isArray(r.realRewards) ? r.realRewards : [],
+    dailyRooms: normalizeDailyRooms(r.dailyRooms),
     lastSurpriseAt: r.lastSurpriseAt || null,
   };
 }
@@ -170,10 +196,13 @@ export function addCard(rewards, themeId, cardId) {
   return out;
 }
 // Начисление валюты — всегда на ребёнка, независимо от выбранной темы.
-// Штрафов и обнулений нет (§336): валюта только растёт.
+// Штрафов и обнулений нет (§336). Растут оба числа: баланс — чтобы было что
+// потратить, earnedTotal — чтобы достигнутое не зависело от трат.
 export function addSparkles(rewards, kind) {
   const out = normalizeRewards(rewards);
-  out.currency += sparklesFor(kind);
+  const amount = sparklesFor(kind);
+  out.currency += amount;
+  out.earnedTotal += amount;
   if (kind === 'day') out.cleanupsTotal += 1;
   return out;
 }

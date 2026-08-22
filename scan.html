@@ -112,6 +112,7 @@
          Это разные задачи и разные промпты, и ребёнок выбирает сам. -->
     <section id="step-mode" class="step col">
       <h1 id="mode-title">Что убираем?</h1>
+      <p class="muted hidden" id="mode-limit"></p>
       <div class="rooms">
         <button class="avatar-btn room-btn" data-mode="closeup">🪑<span class="name">Стол или полка</span></button>
         <button class="avatar-btn room-btn" data-mode="overview">🚪<span class="name">Вся комната</span></button>
@@ -201,6 +202,7 @@
           <div><div class="counter" id="done-items">0</div><div class="muted">убрано вещей</div></div>
         </div>
         <div id="done-extra" class="muted"></div>
+        <div id="limit-note" class="muted hidden"></div>
       </div>
 
       <!-- Награда-карточка: каталог загружает родитель (cards.html), выпадает
@@ -230,6 +232,7 @@
       getHome, getProfile, getSettings, getReference, getRewards, saveRewards, saveProgress,
       listCards,
     } from './js/store.js';
+    import { awardRound, isRoomExhausted, roomsLeft, ROOM_DAILY_LIMIT } from './js/limits-core.js';
     import { scan, verify, reward } from './js/ai.js';
     import { startCamera, stopCamera, cameraErrorText } from './js/camera.js';
     import { prepareScanFrame, revokeFrame } from './js/image.js';
@@ -238,7 +241,7 @@
     import {
       buildRound, stepTask, stepItems, isItemDone, toggleItem, completeStep, skipStep,
       isFinished, roundProgress, roundTaskText, finishRound, elapsedMs, formatDuration,
-      applyRoundToRewards, sessionFromRound,
+      sessionFromRound,
     } from './js/round-core.js';
 
     const $ = id => document.getElementById(id);
@@ -250,6 +253,9 @@
 
     // ── Состояние экрана ──
     let fid = null, profileId = null, isParent = false;
+    // Награды держим при себе: из них считается дневной лимит по комнатам,
+    // и его надо показать ДО уборки, а не «сюрпризом» в конце.
+    let myRewards = null;
     let th = theme(sessionStorage.getItem('tidy.todayTheme') || FALLBACK_THEME);
     let rooms = [], room = null;
     // Режим A (стол крупным планом) или B (обход комнаты) — выбирает ребёнок.
@@ -476,6 +482,7 @@
       const p = roundProgress(round);
       $('done-praise').textContent = verifyResult?.praise || th.praiseWord;
       $('done-sparkles').textContent = round.sparkles;
+      $('limit-note').classList.add('hidden');
       $('done-currency').textContent = th.currencyName;
       $('done-time').textContent = formatDuration(elapsedMs(round));
       $('done-items').textContent = p.itemsDone;
@@ -485,20 +492,30 @@
       renderHeader();
 
       try {
+        // Сессия пишется всегда: история честная, даже когда награды за неё нет.
         await saveProgress(fid, profileId, sessionFromRound(round));
         const rewards = await getRewards(fid, profileId);
-        let next = applyRoundToRewards(rewards, round);
-        // Карточка — только за уборку, подтверждённую проверкой: то же правило,
-        // что и у счётчика уборок, и оно же держит мотивацию снимать «после».
+        // Дневной лимит: за третью уборку той же комнаты награды нет (см.
+        // js/limits-core.js). Раунд при этом состоялся и записан.
+        const award = awardRound(rewards, round);
+        let next = award.rewards;
         let won = null;
-        if (round.verify?.done === true) {
+        // Карточка — только за уборку, подтверждённую проверкой (то же правило,
+        // что у счётчика уборок), и только если награда вообще начисляется.
+        if (award.awarded && round.verify?.done === true) {
           const catalog = await listCards(fid).catch(() => []);
           won = pickCard(catalog, th.id, cardsForTheme(next, th.id));
           if (won) next = addCard(next, th.id, won.id);
         }
         await saveRewards(fid, profileId, next);
+        myRewards = next;
         showCard(won);
-        $('done-extra').textContent = `Всего у тебя: ${th.currencyEmoji} ${next.currency} · уборок: ${next.cleanupsTotal}`;
+        if (!award.awarded) {
+          $('done-sparkles').textContent = '0';
+          $('limit-note').textContent = `Эту комнату сегодня уже убирали ${award.limit} раза — искорки за неё сегодня всё. Завтра снова.`;
+          $('limit-note').classList.remove('hidden');
+        }
+        $('done-extra').textContent = `Всего у тебя: ${th.currencyEmoji} ${next.currency} · заработано за всё время: ${next.earnedTotal} · уборок: ${next.cleanupsTotal}`;
       } catch (e) {
         console.error('save:', e);
         $('done-extra').textContent = 'Искорки засчитаны, но записать не вышло — проверь связь.';
@@ -529,6 +546,12 @@
     // Комната выбрана — спрашиваем, что именно убираем.
     function goMode() {
       $('mode-title').textContent = room ? `${room.icon || '🏠'} ${room.name}: что убираем?` : 'Что убираем?';
+      // Комната на сегодня отработана — не запрещаем, но предупреждаем заранее.
+      const done = myRewards && isRoomExhausted(myRewards, room?.id || null);
+      $('mode-limit').textContent = done
+        ? `Эту комнату сегодня уже убирали ${ROOM_DAILY_LIMIT} раза — искорок и карточки за неё сегодня не будет. Убрать всё равно можно, а завтра она снова считается.`
+        : '';
+      $('mode-limit').classList.toggle('hidden', !done);
       $('btn-back-rooms').classList.toggle('hidden', rooms.length < 2);
       show('step-mode');
       renderHeader();
@@ -586,9 +609,14 @@
 
     // ── Выбор комнаты ──
     function renderRooms() {
-      $('rooms').innerHTML = rooms.map(r => `
+      $('rooms').innerHTML = rooms.map(r => {
+        const left = myRewards ? roomsLeft(myRewards, r.id) : ROOM_DAILY_LIMIT;
+        return `
         <button class="avatar-btn room-btn" data-room="${esc(r.id)}">${esc(r.icon || '🏠')}
-          <span class="name">${esc(r.name)}</span></button>`).join('');
+          <span class="name">${esc(r.name)}</span>
+          <span class="muted" style="font-size:13px">${left ? `осталось ${left} на сегодня` : 'на сегодня всё'}</span>
+        </button>`;
+      }).join('');
       $('rooms').querySelectorAll('[data-room]').forEach(el => {
         el.onclick = () => { room = rooms.find(r => r.id === el.dataset.room) || null; goMode(); };
       });
@@ -603,6 +631,8 @@
       const mine = families.find(f => f.id === fid);
       isParent = mine?.role === 'parent';
       profileId = currentUid(); // ребёнок убирает только в своём профиле (правила)
+
+      try { myRewards = await getRewards(fid, profileId); } catch (e) { console.warn('rewards:', e); }
 
       // Музыка (§ плейлист задаёт родитель в настройках семьи).
       try {

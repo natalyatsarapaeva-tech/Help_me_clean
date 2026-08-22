@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Награды — Наведи и убери</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#3A5DA8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .back { text-decoration: none; color: var(--muted); font-weight: 800; }
+    .reward-row { display: grid; grid-template-columns: 64px 1fr 120px auto; gap: 12px; align-items: center; }
+    .reward-row .emoji { text-align: center; font-size: 30px; }
+    .reward-row .btn { min-height: 52px; padding: 0 16px; }
+    .add-row { display: grid; grid-template-columns: 90px 1fr 140px auto; gap: 12px; align-items: center; }
+    .queue-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; }
+    .queue-row .btn { min-height: 52px; }
+    @media (max-width: 720px) { .reward-row, .add-row { grid-template-columns: 64px 1fr; } .reward-row .btn, .add-row .btn { grid-column: 1 / -1; } }
+  </style>
+</head>
+<body>
+  <div class="wrap col">
+    <a class="back" href="index.html">← Назад</a>
+    <h1>Реальные награды</h1>
+    <p class="muted">
+      На что ребёнок меняет искорки в реальной жизни. Покупка списывает баланс,
+      но <strong>не трогает заработанное за всё время</strong> — ранг и статус от трат
+      не падают. Купленное попадает к вам в очередь на выдачу.
+    </p>
+
+    <!-- Очередь: что дети купили и ждут. -->
+    <section class="card col" id="queue-box">
+      <strong>Ждут выдачи</strong>
+      <div id="queue" class="col"></div>
+    </section>
+
+    <!-- Витрина. -->
+    <section class="card col">
+      <strong>Что можно купить</strong>
+      <div id="list" class="col"></div>
+      <div class="add-row">
+        <input id="new-emoji" class="field" value="🍦" maxlength="4" style="text-align:center">
+        <input id="new-name" class="field" placeholder="Например, «Мороженое»" maxlength="40">
+        <input id="new-cost" class="field" type="number" min="1" step="1" placeholder="Цена ✨">
+        <button id="btn-add" class="btn btn-primary">Добавить</button>
+      </div>
+      <div class="muted" style="font-size:14px">
+        Ориентир: уборка комнаты с проверкой — примерно 8–12 искорок.
+        Ставьте цены так, чтобы ближняя награда бралась за 2–3 уборки, а крупная — за неделю.
+      </div>
+    </section>
+
+    <div id="toast" class="toast"></div>
+  </div>
+
+  <script type="module">
+    import {
+      initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
+      listRealRewards, saveRealReward, deleteRealReward, listAllRewards, saveRewards,
+    } from './js/store.js';
+    import { normalizeShop, makeRewardId, pendingPurchases, markGiven } from './js/shop-core.js';
+
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    let toastTimer;
+    const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); };
+
+    let fid = null, shop = [], children = [];
+
+    function renderShop() {
+      const items = normalizeShop(shop);
+      $('list').innerHTML = items.map(it => `
+        <div class="reward-row" data-reward="${esc(it.id)}">
+          <div class="emoji">${esc(it.emoji)}</div>
+          <div><strong>${esc(it.name)}</strong></div>
+          <div class="chip">✨ ${it.cost}</div>
+          <button class="btn btn-ghost drop">Убрать</button>
+        </div>`).join('') || '<div class="muted">Пока пусто — искорки копятся, но потратить их не на что.</div>';
+      $('list').querySelectorAll('[data-reward]').forEach(el => {
+        el.querySelector('.drop').onclick = async () => {
+          const id = el.dataset.reward;
+          if (!confirm('Убрать награду с витрины? Уже купленное у детей останется.')) return;
+          try {
+            await deleteRealReward(fid, id);
+            shop = shop.filter(x => x.id !== id);
+            renderShop();
+            toast('Убрано с витрины');
+          } catch (e) { console.error(e); toast('Не удалось убрать'); }
+        };
+      });
+    }
+
+    // Очередь выдачи: покупки живут в наградах каждого ребёнка.
+    function renderQueue() {
+      const rows = [];
+      for (const { profile, rewards } of children) {
+        for (const p of pendingPurchases(rewards)) {
+          rows.push(`
+            <div class="queue-row" data-child="${esc(profile.id)}" data-purchase="${esc(p.id)}">
+              <div>${esc(p.emoji || '🎁')} <strong>${esc(p.name)}</strong>
+                <span class="muted">— ${esc(profile.name || profile.id)}, за ✨ ${p.cost}</span></div>
+              <button class="btn btn-primary give">Выдал</button>
+            </div>`);
+        }
+      }
+      $('queue').innerHTML = rows.join('') || '<div class="muted">Пусто — никто ничего не купил.</div>';
+      $('queue').querySelectorAll('[data-purchase]').forEach(el => {
+        el.querySelector('.give').onclick = async () => {
+          const childId = el.dataset.child, purchaseId = el.dataset.purchase;
+          const entry = children.find(c => c.profile.id === childId);
+          if (!entry) return;
+          el.querySelector('.give').disabled = true;
+          try {
+            const next = markGiven(entry.rewards, purchaseId);
+            await saveRewards(fid, childId, next);
+            entry.rewards = next;
+            renderQueue();
+            toast('Отмечено как выданное');
+          } catch (e) { console.error(e); toast('Не удалось отметить'); el.querySelector('.give').disabled = false; }
+        };
+      });
+    }
+
+    $('btn-add').onclick = async () => {
+      const name = $('new-name').value.trim();
+      const cost = parseInt($('new-cost').value, 10);
+      const emoji = $('new-emoji').value.trim() || '🎁';
+      if (!name) { toast('Напишите, что это за награда'); $('new-name').focus(); return; }
+      if (!Number.isFinite(cost) || cost < 1) { toast('Цена — целое число искорок, от 1'); $('new-cost').focus(); return; }
+      $('btn-add').disabled = true;
+      try {
+        const saved = await saveRealReward(fid, makeRewardId(name), { name, cost, emoji });
+        shop = [...shop, saved];
+        $('new-name').value = ''; $('new-cost').value = ''; $('new-emoji').value = '🎁';
+        renderShop();
+        toast('Награда добавлена');
+      } catch (e) { console.error(e); toast('Не удалось сохранить'); }
+      finally { $('btn-add').disabled = false; }
+    };
+
+    // ── Старт: только для родителя ──
+    (async () => {
+      const user = await initAuth();
+      if (!user || !currentUid()) { location.href = 'index.html'; return; }
+      const families = await listMyFamilies();
+      fid = resolveActiveFamily(families) || getActiveFamilyId();
+      const mine = families.find(f => f.id === fid);
+      if (mine?.role !== 'parent') { toast('Только для родителя'); setTimeout(() => location.href = 'index.html', 800); return; }
+      try { shop = await listRealRewards(fid); } catch (e) { console.warn('shop:', e); }
+      renderShop();
+      try { children = await listAllRewards(fid); } catch (e) { console.warn('children:', e); }
+      renderQueue();
+    })();
+  </script>
+  <script src="pwa.js"></script>
+</body>
+</html>
