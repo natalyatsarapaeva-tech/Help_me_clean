@@ -323,3 +323,16 @@ export function reconcileRouteOrder(savedOrder, home) {
   const added = ids.filter(id => !kept.includes(id));
   return [...kept, ...added];
 }
+
+// ── Эталонные фото: покрытие комнат (§300) ──────────────────────────────────
+// Эталон — снятая родителем «как должно выглядеть убранным» фотография поверхности.
+// Проверка сравнивает «после» с НЕЙ, а не с идеалом из головы модели: у каждой
+// семьи свой порядок, и «убрано» на кухне бабушки и в детской — разные вещи.
+// Чистая свёртка «комнаты маршрута × эталоны» для экрана родителя.
+export function referenceCoverage(rooms, references) {
+  const byId = new Map((Array.isArray(references) ? references : [])
+    .map(r => [r.id || r.surfaceId, r]).filter(([id]) => id));
+  const list = (Array.isArray(rooms) ? rooms : []).map(r => ({ ...r, reference: byId.get(r.id) || null }));
+  const covered = list.filter(r => r.reference).length;
+  return { rooms: list, covered, total: list.length, complete: list.length > 0 && covered === list.length };
+}

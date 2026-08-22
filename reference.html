@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Эталоны — Наведи и убери</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#3A5DA8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .back { text-decoration: none; color: var(--muted); font-weight: 800; }
+    .step { display: none; }
+    .step.on { display: block; }
+    .ref-row { display: grid; grid-template-columns: 128px 1fr auto; gap: 14px; align-items: center; }
+    .thumb { width: 128px; height: 96px; border-radius: 12px; object-fit: cover; background: var(--card); border: 2px solid var(--line); }
+    .thumb.empty { display: flex; align-items: center; justify-content: center; font-size: 34px; color: var(--muted); }
+    .ref-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .ref-actions .btn { min-height: 52px; padding: 0 16px; }
+    .frame { position: relative; border-radius: var(--radius); overflow: hidden; background: #000; line-height: 0; max-width: 860px; }
+    .frame video, .frame img { display: block; width: 100%; max-height: 62vh; object-fit: contain; background: #000; }
+    .hint-over { position: absolute; left: 0; right: 0; top: 0; padding: 12px 16px; color: #fff; font-weight: 800;
+      background: linear-gradient(rgba(0,0,0,.55), transparent); line-height: 1.3; }
+    .shutter { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); width: 88px; height: 88px;
+      border-radius: 50%; border: 6px solid #fff; background: rgba(255,255,255,.28); cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+    .shutter:active { transform: translateX(-50%) scale(.94); }
+    @media (max-width: 620px) { .ref-row { grid-template-columns: 96px 1fr; } .thumb { width: 96px; height: 72px; } .ref-actions { grid-column: 1 / -1; } }
+  </style>
+</head>
+<body>
+  <div class="wrap col">
+    <a class="back" href="index.html">← Назад</a>
+    <h1>Эталоны</h1>
+
+    <!-- Список комнат: где эталон снят, где нет. -->
+    <section id="step-list" class="step on col">
+      <p class="muted">
+        Эталон — фото поверхности, <strong>какой она должна быть убранной</strong>.
+        Проверка сравнивает детское «после» с ним, а не с идеалом из головы модели:
+        у каждой семьи свой порядок. Без эталона уборка работает — просто проверка мягче.
+      </p>
+      <div class="chip" id="coverage">—</div>
+      <div id="rooms" class="col"></div>
+    </section>
+
+    <!-- Съёмка эталона для выбранной комнаты. -->
+    <section id="step-shoot" class="step col">
+      <h1 id="shoot-title">Комната</h1>
+      <p class="muted">Убери поверхность так, как считаешь правильным, и сними её. С того же ракурса, с какого будет снимать ребёнок.</p>
+      <div class="frame" id="frame">
+        <video id="video" playsinline muted></video>
+        <div class="hint-over">Наведи на убранный стол или полку</div>
+        <button class="shutter" id="btn-shot" aria-label="Снять"></button>
+      </div>
+      <div class="row" id="cam-fallback" style="display:none">
+        <label class="btn btn-primary" style="max-width:340px">
+          📷 Сделать фото
+          <input id="file-input" type="file" accept="image/*" capture="environment" hidden>
+        </label>
+        <span class="muted" id="cam-error"></span>
+      </div>
+      <div class="row">
+        <button class="btn btn-ghost" id="btn-cancel">← К списку</button>
+      </div>
+    </section>
+
+    <!-- Просмотр снятого до загрузки: эталон — надолго, стоит посмотреть. -->
+    <section id="step-preview" class="step col">
+      <h1>Так и должно быть убрано?</h1>
+      <div class="frame"><img id="preview" alt=""></div>
+      <div class="row">
+        <button class="btn btn-primary" id="btn-save">Сохранить эталон</button>
+        <button class="btn btn-ghost" id="btn-retake">Переснять</button>
+      </div>
+    </section>
+
+    <div id="toast" class="toast"></div>
+  </div>
+
+  <script type="module">
+    import {
+      initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
+      getHome, listReferences, saveReference, deleteReference,
+    } from './js/store.js';
+    import { startCamera, stopCamera, cameraErrorText } from './js/camera.js';
+    import { compressReference } from './js/image.js';
+    import { roomsInOrder, reconcileRouteOrder, referenceCoverage } from './js/family-core.js';
+
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const STEPS = ['step-list', 'step-shoot', 'step-preview'];
+    const show = id => STEPS.forEach(s => $(s).classList.toggle('on', s === id));
+    let toastTimer;
+    const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); };
+
+    let fid = null, rooms = [], refs = [], target = null, shot = null;
+
+    function renderList() {
+      const cov = referenceCoverage(rooms, refs);
+      $('coverage').textContent = cov.total
+        ? `Снято ${cov.covered} из ${cov.total}${cov.complete ? ' — все комнаты' : ''}`
+        : 'Комнат пока нет';
+      $('rooms').innerHTML = cov.rooms.map(r => `
+        <div class="card ref-row" data-room="${esc(r.id)}">
+          ${r.reference
+            ? `<img class="thumb" src="${esc(r.reference.url)}" alt="">`
+            : '<div class="thumb empty">📷</div>'}
+          <div class="col" style="gap:2px">
+            <strong>${esc(r.icon || '🏠')} ${esc(r.name)}</strong>
+            <span class="muted">${r.reference ? 'Эталон снят' : 'Эталона нет — проверка будет мягче'}</span>
+          </div>
+          <div class="ref-actions">
+            <button class="btn btn-primary shoot">${r.reference ? 'Переснять' : 'Снять эталон'}</button>
+            ${r.reference ? '<button class="btn btn-ghost drop">Удалить</button>' : ''}
+          </div>
+        </div>`).join('') || '<div class="muted">Сначала создай карту дома на экране «Дом».</div>';
+
+      $('rooms').querySelectorAll('[data-room]').forEach(el => {
+        const room = rooms.find(r => r.id === el.dataset.room);
+        el.querySelector('.shoot').onclick = () => goShoot(room);
+        const drop = el.querySelector('.drop');
+        if (drop) drop.onclick = async () => {
+          if (!confirm(`Удалить эталон для «${room.name}»?`)) return;
+          drop.disabled = true;
+          try {
+            await deleteReference(fid, room.id);
+            refs = refs.filter(x => (x.id || x.surfaceId) !== room.id);
+            renderList();
+            toast('Эталон удалён');
+          } catch (e) { console.error(e); toast('Не удалось удалить'); drop.disabled = false; }
+        };
+      });
+    }
+
+    async function goShoot(room) {
+      target = room;
+      $('shoot-title').textContent = `${room.icon || '🏠'} ${room.name}`;
+      show('step-shoot');
+      try {
+        await startCamera($('video'));
+        $('frame').style.display = '';
+        $('cam-fallback').style.display = 'none';
+      } catch (e) {
+        $('frame').style.display = 'none';
+        $('cam-fallback').style.display = '';
+        $('cam-error').textContent = cameraErrorText(e);
+      }
+    }
+
+    async function capture(source) {
+      try {
+        shot = await compressReference(source);
+        stopCamera();
+        $('preview').src = shot.url;
+        show('step-preview');
+      } catch (e) { console.error(e); toast('Не получилось снять — попробуй ещё раз'); }
+    }
+
+    function dropShot() {
+      if (shot?.url) URL.revokeObjectURL(shot.url);
+      shot = null;
+    }
+
+    $('btn-shot').onclick = () => capture($('video'));
+    $('file-input').onchange = e => { const f = e.target.files?.[0]; if (f) capture(f); e.target.value = ''; };
+    $('btn-cancel').onclick = () => { stopCamera(); dropShot(); show('step-list'); };
+    $('btn-retake').onclick = () => { dropShot(); goShoot(target); };
+    $('btn-save').onclick = async () => {
+      if (!shot || !target) return;
+      $('btn-save').disabled = true;
+      try {
+        const saved = await saveReference(fid, target.id, shot.blob, {
+          roomId: target.id, roomName: target.name, w: shot.w, h: shot.h,
+        });
+        refs = [...refs.filter(x => (x.id || x.surfaceId) !== target.id), saved];
+        dropShot();
+        renderList();
+        show('step-list');
+        toast('Эталон сохранён');
+      } catch (e) {
+        console.error(e);
+        toast(e?.code === 'storage/unauthorized'
+          ? 'Storage отклонил загрузку — проверь правила'
+          : 'Не удалось сохранить эталон');
+      } finally { $('btn-save').disabled = false; }
+    };
+
+    // ── Старт: только для родителя ──
+    (async () => {
+      const user = await initAuth();
+      if (!user || !currentUid()) { location.href = 'index.html'; return; }
+      const families = await listMyFamilies();
+      fid = resolveActiveFamily(families) || getActiveFamilyId();
+      const mine = families.find(f => f.id === fid);
+      if (mine?.role !== 'parent') { toast('Только для родителя'); setTimeout(() => location.href = 'index.html', 800); return; }
+
+      const home = await getHome(fid);
+      const all = roomsInOrder(home || { floors: [] });
+      const byId = new Map(all.map(r => [r.id, r]));
+      rooms = reconcileRouteOrder(home?.routeOrder || [], home || { floors: [] }).map(id => byId.get(id)).filter(Boolean);
+      try { refs = await listReferences(fid); } catch (e) { console.warn('refs:', e); }
+      renderList();
+    })();
+  </script>
+  <script src="pwa.js"></script>
+</body>
+</html>

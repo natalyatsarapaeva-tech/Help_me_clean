@@ -12,7 +12,8 @@ import {
   db, doc, getDoc, setDoc, collection, getDocs, query, where,
   auth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
   getRedirectResult, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
-  authReady, createSecondaryAuth, projectId,
+  authReady, createSecondaryAuth, projectId, deleteDoc,
+  storage, storageRef, uploadBytes, getDownloadURL, deleteObject,
 } from './firebase.js';
 
 export { projectId };
@@ -263,6 +264,37 @@ export async function saveRewards(fid, profileId, rewards) {
 export async function getReference(fid, surfaceId) {
   const snap = await getDoc(doc(db, 'families', fid, 'reference', surfaceId));
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+export async function listReferences(fid) {
+  const snap = await getDocs(collection(db, 'families', fid, 'reference'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+function referencePath(fid, surfaceId) { return `families/${fid}/reference/${surfaceId}.jpg`; }
+
+// Файл — в Storage (там место картинкам), ссылка и метаданные — в Firestore
+// (оттуда их читает раунд). Одна поверхность — один файл: пересъёмка перезаписывает,
+// история эталонов никому не нужна.
+export async function saveReference(fid, surfaceId, blob, meta = {}) {
+  const path = referencePath(fid, surfaceId);
+  const fileRef = storageRef(storage, path);
+  await uploadBytes(fileRef, blob, { contentType: 'image/jpeg' });
+  const url = await getDownloadURL(fileRef);
+  const data = {
+    surfaceId,
+    roomId: meta.roomId || surfaceId,
+    roomName: meta.roomName || '',
+    url, path,
+    w: meta.w || null, h: meta.h || null,
+    byUid: currentUid(),
+    updatedAt: new Date().toISOString(),
+  };
+  await setDoc(doc(db, 'families', fid, 'reference', surfaceId), data, { merge: true });
+  return { id: surfaceId, ...data };
+}
+export async function deleteReference(fid, surfaceId) {
+  try { await deleteObject(storageRef(storage, referencePath(fid, surfaceId))); }
+  catch (e) { if (e?.code !== 'storage/object-not-found') throw e; } // файла нет — документ всё равно чистим
+  await deleteDoc(doc(db, 'families', fid, 'reference', surfaceId));
 }
 
 // ── Дом и настройки ──────────────────────────────────────────────────────────

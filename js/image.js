@@ -53,6 +53,13 @@ export function sourceSize(src) {
   return { w, h };
 }
 
+// File → Image; <img>/<video>/canvas — уже можно рисовать как есть.
+async function toDrawable(source) {
+  const drawable = source && typeof source === 'object'
+    && ('naturalWidth' in source || 'videoWidth' in source || source.tagName === 'CANVAS');
+  return drawable ? source : fileToImage(source);
+}
+
 function drawToCanvas(img, maxSide) {
   const src = sourceSize(img);
   const { w, h } = fitWithin(src.w, src.h, maxSide);
@@ -74,8 +81,7 @@ function canvasToBlob(canvas, quality) {
 // или canvas: подсветка потом рисуется поверх ЭТОГО кадра, поэтому важно, чтобы
 // координаты от модели и картинка на экране были из одного и того же кадра.
 export async function prepareScanFrame(source, { maxSide = MAX_SCAN, quality = SCAN_Q } = {}) {
-  const img = (source && typeof source === 'object' && ('naturalWidth' in source || 'videoWidth' in source || source.tagName === 'CANVAS'))
-    ? source : await fileToImage(source);
+  const img = await toDrawable(source);
   const { canvas, ctx, w, h } = drawToCanvas(img, maxSide);
   const brightness = averageBrightness(ctx.getImageData(0, 0, w, h).data);
   const blob = await canvasToBlob(canvas, quality);
@@ -84,12 +90,13 @@ export async function prepareScanFrame(source, { maxSide = MAX_SCAN, quality = S
   return { blob, base64, url: URL.createObjectURL(blob), w, h, brightness, tooDark: isTooDark(brightness) };
 }
 
-// Эталонное фото: сжать до 1600px для загрузки в Storage.
-export async function compressReference(file, { maxSide = MAX_REFERENCE, quality = REFERENCE_Q } = {}) {
-  const img = await fileToImage(file);
+// Эталонное фото: сжать до 1600px для загрузки в Storage. Источник — тот же
+// набор, что и у кадра сканера: родитель снимает эталон живой камерой.
+export async function compressReference(source, { maxSide = MAX_REFERENCE, quality = REFERENCE_Q } = {}) {
+  const img = await toDrawable(source);
   const { canvas, w, h } = drawToCanvas(img, maxSide);
   const blob = await canvasToBlob(canvas, quality);
-  return { blob, w, h };
+  return { blob, w, h, url: URL.createObjectURL(blob) };
 }
 
 export function blobToBase64(blob) {

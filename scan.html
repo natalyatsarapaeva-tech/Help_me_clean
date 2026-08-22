@@ -188,6 +188,7 @@
       getHome, getProfile, getSettings, getReference, getRewards, saveRewards, saveProgress,
     } from './js/store.js';
     import { scan, verify, reward } from './js/ai.js';
+    import { startCamera, stopCamera, cameraErrorText } from './js/camera.js';
     import { prepareScanFrame, revokeFrame } from './js/image.js';
     import { theme, roomsInOrder, reconcileRouteOrder, FALLBACK_THEME } from './js/family-core.js';
     import {
@@ -225,17 +226,12 @@
     }
 
     // ── Камера ──
-    // Одна функция на оба экрана: живой поток, если можно; иначе — <input capture>,
-    // чтобы уборка не упиралась в отсутствие разрешения (старый iPad, http, отказ).
-    let stream = null;
-    async function startCamera(videoEl, fallbackEl) {
-      stopCamera();
+    // Поток открывает js/camera.js (он же гасит его при уходе со страницы).
+    // Здесь — только то, что видно ребёнку: получилось — снимаем живьём, не
+    // получилось (отказ, старый планшет, http) — кнопка «Сделать фото».
+    async function openCamera(videoEl, fallbackEl) {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 } }, audio: false,
-        });
-        videoEl.srcObject = stream;
-        await videoEl.play();
+        await startCamera(videoEl);
         videoEl.parentElement.style.display = '';
         if (fallbackEl) fallbackEl.style.display = 'none';
         return true;
@@ -243,15 +239,10 @@
         console.warn('getUserMedia:', e?.name || e);
         videoEl.parentElement.style.display = 'none';
         if (fallbackEl) fallbackEl.style.display = '';
-        if ($('cam-error')) $('cam-error').textContent = e?.name === 'NotAllowedError'
-          ? 'Камера не разрешена — можно снять фото кнопкой.' : 'Камера недоступна — сними фото кнопкой.';
+        if ($('cam-error')) $('cam-error').textContent = cameraErrorText(e);
         return false;
       }
     }
-    function stopCamera() {
-      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-    }
-    window.addEventListener('pagehide', stopCamera);
 
     // Кадр → проверка яркости (§470) → base64 для сканера.
     async function grabFrame(source) {
@@ -351,7 +342,7 @@
       $('after-sub').textContent = 'Сфотографируй то же место с того же ракурса.';
       show('step-after');
       say('Покажи, что получилось!');
-      await startCamera($('video2'), $('cam-fallback2'));
+      await openCamera($('video2'), $('cam-fallback2'));
     }
 
     async function runVerify(frameAfter) {
@@ -385,7 +376,7 @@
         $('after-sub').textContent = 'Убери — и сними ещё раз. Или закончи как есть.';
         show('step-after');
         say(`Почти! Осталось убрать: ${result.missed[0]}`);
-        await startCamera($('video2'), $('cam-fallback2'));
+        await openCamera($('video2'), $('cam-fallback2'));
         return;
       }
       await finish(result);
@@ -423,7 +414,7 @@
     async function goCamera() {
       show('step-camera');
       renderHeader();
-      await startCamera($('video'), $('cam-fallback'));
+      await openCamera($('video'), $('cam-fallback'));
     }
 
     async function shoot(source) {

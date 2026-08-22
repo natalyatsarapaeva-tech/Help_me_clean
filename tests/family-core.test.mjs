@@ -12,6 +12,7 @@ import {
   cornersToXywh, parseJsonObject, parseJsonArray, stripJsonFences,
   sanitizeScan, sanitizeVerify, sanitizeHome,
   roomTypeLabel, roomsInOrder, defaultRouteOrder, moveInArray, reconcileRouteOrder,
+  referenceCoverage,
 } from '../js/family-core.js';
 
 test('роли', () => {
@@ -186,4 +187,22 @@ test('sanitizeHome: валидные типы комнат, отбрасывае
   assert.equal(out.floors.length, 1);
   assert.equal(out.floors[0].rooms.length, 2);
   assert.equal(out.floors[0].rooms[1].type, 'other');
+});
+
+test('покрытие эталонами: что снято, что нет', () => {
+  const rooms = [{ id: 'kitchen', name: 'Кухня' }, { id: 'maya', name: 'Комната Майи' }];
+  const cov = referenceCoverage(rooms, [{ id: 'kitchen', url: 'https://x/1.jpg' }]);
+  assert.equal(cov.covered, 1);
+  assert.equal(cov.total, 2);
+  assert.equal(cov.complete, false);
+  assert.equal(cov.rooms[0].reference.url, 'https://x/1.jpg');
+  assert.equal(cov.rooms[1].reference, null);
+  assert.equal(cov.rooms[0].name, 'Кухня', 'комната не теряет своих полей');
+
+  const all = referenceCoverage(rooms, [{ surfaceId: 'kitchen' }, { surfaceId: 'maya' }]);
+  assert.ok(all.complete, 'документы бывают и с surfaceId вместо id');
+
+  const none = referenceCoverage([], [{ id: 'kitchen' }]);
+  assert.deepEqual(none, { rooms: [], covered: 0, total: 0, complete: false });
+  assert.equal(referenceCoverage(null, null).total, 0);
 });
