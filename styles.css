@@ -16,7 +16,8 @@
 /* Семь цветов действий — фиксированы, вне темы (§232). */
 :root {
   --act-paper: #2F6BFF; --act-stationery: #25A55A; --act-trash: #8B5CF6;
-  --act-dishes: #F0871E; --act-clothes: #F5C518; --act-toys: #F472B6;
+  --act-dishes: #F0871E; --act-textile: #F5C518; --act-toys: #F472B6;
+  --act-floor: #8D6E63; --act-make_bed: #00ACC1; --act-bin_full: #E53935;
   --act-belongs_elsewhere: #9AA3AE;
 }
 

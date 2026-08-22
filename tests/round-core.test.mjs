@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  ROUND_ORDER, orderCategories, buildRound, currentStep, isFinished,
+  ROUND_ORDER, LAST_CATEGORIES, isLastCategory, orderCategories, buildRound, currentStep, isFinished,
   stepItems, stepTask, toggleItem, isItemDone, completeStep, skipStep,
   roundProgress, roundTaskText, finishRound, elapsedMs, formatDuration,
   applyRoundToRewards, sessionFromRound,
@@ -265,4 +265,33 @@ test('место из скана едет в раунд и в прогресс �
   assert.equal(sessionFromRound(r).place, 'раковина');
   const noPlace = buildRound(sanitizeScan({ mode: 'closeup', items: [] }), { now: fixed(0), rand: () => 0 });
   assert.equal(noPlace.place, '', 'сканер не назвал место — не выдумываем');
+});
+
+test('полная урна — всегда последний шаг, даже если сканер назвал её первой', () => {
+  const r = buildRound(sanitizeScan({ mode: 'closeup', items: [
+    { id: 1, label: 'урна с бумагами', category: 'bin_full', box: [0, 0, 0.2, 0.3] },
+    { id: 2, label: 'коробка', category: 'floor', box: [0.3, 0.5, 0.5, 0.8] },
+    { id: 3, label: 'фантик', category: 'trash', box: [0.6, 0.1, 0.7, 0.2] },
+  ] }), { now: fixed(0), rand: () => 0 });
+  assert.deepEqual(r.steps.map(s => s.category), ['trash', 'floor', 'bin_full'],
+    'мусор собрали, пол освободили — и только потом выносим урну');
+  assert.ok(isLastCategory('bin_full') && !isLastCategory('trash'));
+  assert.deepEqual(LAST_CATEGORIES, ['bin_full']);
+});
+
+test('в обходе комнаты урна тоже уезжает в конец, остальной порядок модельный', () => {
+  const r = buildRound(sanitizeScan({ mode: 'overview', route: [
+    { step: 1, label: 'урна', point: [0.1, 0.9], action: 'вынести', category: 'bin_full' },
+    { step: 2, label: 'мишка', point: [0.4, 0.6], action: 'в ящик', category: 'toys' },
+    { step: 3, label: 'провод', point: [0.7, 0.8], action: 'смотать', category: 'floor' },
+    { step: 4, label: 'кровать', point: [0.5, 0.4], action: 'заправить', category: 'make_bed' },
+  ] }), { now: fixed(0), rand: () => 0 });
+  assert.deepEqual(r.steps.map(s => s.category), ['toys', 'floor', 'make_bed', 'bin_full']);
+});
+
+test('порядок раунда покрывает весь словарь и заканчивается урной', () => {
+  assert.equal(ROUND_ORDER.length, ACTION_IDS.length);
+  assert.deepEqual([...ROUND_ORDER].sort(), [...ACTION_IDS].sort());
+  assert.equal(ROUND_ORDER[ROUND_ORDER.length - 1], 'bin_full');
+  assert.ok(ROUND_ORDER.indexOf('floor') < ROUND_ORDER.indexOf('belongs_elsewhere'));
 });

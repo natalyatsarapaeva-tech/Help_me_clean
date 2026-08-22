@@ -5,8 +5,8 @@ import {
   ROLES, PARENT, CHILD, isValidRole, canManageFamily, canAccessProfile,
   makeJoinCode, normalizeJoinCode, isValidJoinCode,
   makeFamilyId, makeSessionId, pickActiveFamily,
-  ROOM_TYPES, normalizeRoomType, ACTION_IDS, actionCategory, isValidActionCategory,
-  normalizeActionCategory, cleanPlace,
+  ROOM_TYPES, normalizeRoomType, ACTION_IDS, ACTION_CATEGORIES, actionCategory, isValidActionCategory,
+  normalizeActionCategory, cleanPlace, TIDY_STANDARD, TIDY_STANDARD_TEXT,
   THEME_IDS, theme, isValidTheme, normalizeTheme, FALLBACK_THEME, rankForCleanups, JEDI_RANKS,
   SPARKLES, sparklesFor, nextSurpriseIn, shouldSurprise,
   emptyRewards, normalizeRewards, cardsForTheme, addCard, addSparkles,
@@ -57,7 +57,7 @@ test('типы комнат и цветовой словарь — закрыт�
   assert.equal(ROOM_TYPES.length, 7);
   assert.equal(normalizeRoomType('kitchen'), 'kitchen');
   assert.equal(normalizeRoomType('nonsense'), 'other');
-  assert.equal(ACTION_IDS.length, 7);
+  assert.equal(ACTION_IDS.length, 10);
   assert.ok(isValidActionCategory('paper') && !isValidActionCategory('blue'));
   assert.equal(actionCategory('trash').target, 'Ведро');
 });
@@ -233,4 +233,36 @@ test('имя места приводится к сравнимому виду �
   assert.equal(cleanPlace(null), '');
   assert.equal(cleanPlace('a'.repeat(80)).length, 40, 'длинное описание подрезается');
   assert.equal(sanitizeScan({ mode: 'closeup', place: 'Раковина', items: [] }).place, 'раковина');
+});
+
+test('норма порядка одна на всё приложение и покрывает поднятые требования', () => {
+  const all = TIDY_STANDARD.join(' ').toLowerCase();
+  assert.match(all, /пуст/, 'пустая поверхность — норма');
+  assert.match(all, /лампа/, 'исключение для письменного стола');
+  assert.match(all, /стул/, 'на стульях вещей нет');
+  assert.match(all, /кровать заправлена|заправлена/, 'кровать заправлена');
+  assert.match(all, /пол свободен|на полу не место/, 'пол свободен');
+  assert.match(all, /урн/, 'полная урна — отдельная задача');
+  assert.ok(TIDY_STANDARD_TEXT.startsWith('- '), 'готова к подстановке в промпт');
+  assert.equal(TIDY_STANDARD_TEXT.split('\n').length, TIDY_STANDARD.length);
+});
+
+test('новые категории: пол, кровать, полная урна', () => {
+  for (const id of ['floor', 'make_bed', 'bin_full']) {
+    assert.ok(ACTION_IDS.includes(id), id);
+    assert.ok(actionCategory(id).instruction.length > 5);
+    assert.match(actionCategory(id).color, /^#[0-9A-F]{6}$/i);
+  }
+  assert.match(actionCategory('floor').instruction, /пол/i);
+  assert.match(actionCategory('bin_full').instruction, /урна/i);
+  assert.match(actionCategory('make_bed').instruction, /кровать/i);
+  const colors = ACTION_CATEGORIES.map(c => c.color);
+  assert.equal(new Set(colors).size, colors.length, 'цвета не повторяются — иначе шаги не различить');
+});
+
+test('«чужая вещь» спрашивает ребёнка, а не отправляет в корзину', () => {
+  const c = actionCategory('belongs_elsewhere');
+  assert.match(c.instruction, /не живёт/);
+  assert.match(c.instruction, /вспомни/i);
+  assert.ok(!/корзин/i.test(c.instruction + c.target), 'корзины «чужое» больше нет');
 });

@@ -17,7 +17,17 @@ import {
 // («сначала мусор, потом посуда…») и перестаёт тратить внимание на выбор.
 // Начало — самое заметное и быстрое (мусор, посуда): ранняя победа держит заход.
 // Конец — мелкий разбор (канцелярия) и «чужое», куда сил уже почти не надо.
-export const ROUND_ORDER = ['trash', 'dishes', 'textile', 'toys', 'paper', 'stationery', 'belongs_elsewhere'];
+export const ROUND_ORDER = [
+  'trash', 'dishes', 'textile', 'toys', 'paper', 'stationery',
+  'floor', 'make_bed', 'belongs_elsewhere', 'bin_full',
+];
+// Категории, которые всегда уезжают в КОНЕЦ раунда, даже в режиме обхода, где
+// порядок в остальном модельный. Вынести урну до того, как в неё сложили мусор
+// комнаты, — значит нести её дважды.
+export const LAST_CATEGORIES = ['bin_full'];
+export function isLastCategory(category) {
+  return LAST_CATEGORIES.includes(normalizeActionCategory(category));
+}
 const ORDER_INDEX = new Map(ROUND_ORDER.map((id, i) => [id, i]));
 export function orderIndex(category) {
   const cat = normalizeActionCategory(category);
@@ -55,7 +65,7 @@ export function buildRound(scanned, {
         id: it.id ?? i + 1, label: it.label || '', category: it.category, box: it.box,
       }));
   // В обходе каждая точка — свой шаг; на столе шаг собирает весь цвет.
-  const steps = overview
+  const rawSteps = overview
     ? items.map(it => ({ category: it.category, itemIds: [it.id], doneAt: null, skipped: false }))
     : orderCategories([...new Set(items.map(it => it.category))]).map(category => ({
         category,
@@ -63,6 +73,11 @@ export function buildRound(scanned, {
         doneAt: null,
         skipped: false,
       }));
+  // «Последние» шаги (полная урна) переносим в конец в ОБОИХ режимах.
+  const steps = [
+    ...rawSteps.filter(st => !isLastCategory(st.category)),
+    ...rawSteps.filter(st => isLastCategory(st.category)),
+  ];
   return {
     id: id || makeSessionId(now, rand),
     mode: overview ? 'overview' : 'closeup',
