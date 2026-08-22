@@ -11,7 +11,7 @@ import {
   SPARKLES, sparklesFor, nextSurpriseIn, shouldSurprise,
   emptyRewards, normalizeRewards, cardsForTheme, addCard, addSparkles,
   cornersToXywh, parseJsonObject, parseJsonArray, stripJsonFences,
-  sanitizeScan, sanitizeVerify, sanitizeHome,
+  sanitizeScan, sanitizeVerify, sanitizeHome, ZONE_IDS, zoneKind, normalizeZoneKind, zoneNeedsCloseup, clampPoint,
   roomTypeLabel, roomsInOrder, defaultRouteOrder, moveInArray, reconcileRouteOrder,
   referenceCoverage,
 } from '../js/family-core.js';
@@ -265,4 +265,53 @@ test('«чужая вещь» спрашивает ребёнка, а не от�
   assert.match(c.instruction, /не живёт/);
   assert.match(c.instruction, /вспомни/i);
   assert.ok(!/корзин/i.test(c.instruction + c.target), 'корзины «чужое» больше нет');
+});
+
+
+// ── Очаги комнаты (режим «фото комнаты») ────────────────────────────────────
+test('sanitizeScan overview: очаги вместо россыпи точек', () => {
+  const out = sanitizeScan({
+    mode: 'overview', place: '«Детская»', estimated_minutes: 12,
+    zones: [
+      { id: 1, kind: 'desk', label: 'стол', point: [0.6, 0.4], category: 'paper', action: 'разбери стол', items_estimate: 9 },
+      { id: 2, kind: 'выдумка', point: [0.2, 0.5], category: 'textile', items_estimate: 3 },
+      { id: 3, kind: 'floor', point: [0.4, 0.9], category: 'нет-такой-категории' },
+    ],
+  });
+  assert.equal(out.zones.length, 2, 'очаг без валидной категории действия отбрасываем');
+  assert.equal(out.zones[0].needsCloseup, true, 'девять мелочей на столе — надо подойти');
+  assert.equal(out.zones[1].kind, 'other', 'выдуманный вид очага сводится к «ещё»');
+  assert.equal(out.zones[1].label, 'ещё', 'без подписи берём название вида очага');
+  assert.equal(out.zones[1].needsCloseup, false);
+  assert.equal(out.place, 'детская');
+  assert.equal(out.estimated_minutes, 12);
+});
+
+test('кривые координаты очаг не выбрасывают — метка встаёт в центр', () => {
+  assert.deepEqual(clampPoint([2, -1]), [1, 0]);
+  assert.deepEqual(clampPoint(null), [0.5, 0.5]);
+  assert.deepEqual(clampPoint(['x', 0.3]), [0.5, 0.3]);
+  const out = sanitizeScan({ mode: 'overview', zones: [{ kind: 'bed', category: 'make_bed' }] });
+  assert.equal(out.zones.length, 1, 'реальную работу терять хуже, чем нарисовать кружок не там');
+  assert.deepEqual(out.zones[0].point, [0.5, 0.5]);
+  assert.equal(out.zones[0].label, 'кровать', 'без подписи берём название вида очага');
+});
+
+test('крупный план: слово модели весомее умолчания по виду очага', () => {
+  assert.equal(zoneNeedsCloseup('desk', 9, undefined), true);
+  assert.equal(zoneNeedsCloseup('desk', 9, false), false, 'модель видела кадр — ей виднее');
+  assert.equal(zoneNeedsCloseup('desk', 1, undefined), false, 'одна вещь на столе — подходить незачем');
+  assert.equal(zoneNeedsCloseup('chair', 9, undefined), false, 'куча одежды на стуле и так понятна');
+  assert.equal(zoneNeedsCloseup('bin', 1, true), true);
+});
+
+test('словарь очагов: у каждого есть эмодзи, имя и строка плана', () => {
+  assert.ok(ZONE_IDS.includes('wipe') && ZONE_IDS.includes('other'));
+  for (const id of ZONE_IDS) {
+    const z = zoneKind(id);
+    assert.ok(z.emoji && z.name && z.plan && z.color, id);
+  }
+  assert.equal(normalizeZoneKind('нет такого'), 'other');
+  assert.equal(zoneKind('wipe').instruction, 'Протри поверхность',
+    'у протирания нет категории действия — текст берётся из словаря очагов');
 });

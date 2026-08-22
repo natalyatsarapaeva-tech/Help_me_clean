@@ -116,6 +116,45 @@ export function normalizeActionCategory(id) {
 export function actionCategory(id) { return ACTION_BY_ID.get(normalizeActionCategory(id)) || null; }
 export function isValidActionCategory(id) { return ACTION_BY_ID.has(normalizeActionCategory(id)); }
 
+// ── Очаги беспорядка: зоны комнаты (режим «фото комнаты», §268) ─────────────
+// В обходе комнаты шаг — не отдельная вещь, а ОЧАГ: стул с одеждой, пол,
+// стол, полка, урна. Так и рассуждает человек, который заходит в комнату:
+// «одежду со стула, потом пол, потом разберу стол» — а не «синий грузовик,
+// потом мишка, потом носки». Пунктирная россыпь из пятнадцати точек по одной
+// вещи не даёт ребёнку увидеть фронт работ и утомляет раньше, чем комната
+// становится чище.
+//
+// closeup: true — очаг, который с порога комнаты ВИДНО, но не РАЗГЛЯДЕТЬ: на
+// столе лежит «что-то мелкое». Такой шаг просит подойти и снять крупным
+// планом — дальше работает режим A со своими рамками и цветами.
+// color/instruction/target — запасные: у очага обычно есть категория действия
+// со своим цветом и текстом. Своих не хватает только «протереть» — категории
+// для него в словаре нет и быть не должно (сканер такое не размечает).
+export const ZONE_KINDS = [
+  { id: 'chair',   emoji: '🪑', name: 'стул',        plan: 'убрать вещи со стула',     closeup: false, color: '#F5C518' },
+  { id: 'floor',   emoji: '🟤', name: 'пол',         plan: 'очистить пол от лишнего',  closeup: false, color: '#8D6E63' },
+  { id: 'bed',     emoji: '🛏', name: 'кровать',     plan: 'заправить кровать',        closeup: false, color: '#00ACC1' },
+  { id: 'desk',    emoji: '📝', name: 'стол',        plan: 'навести порядок на столе', closeup: true,  color: '#2F6BFF' },
+  { id: 'shelf',   emoji: '📚', name: 'полка',       plan: 'разобрать полку',          closeup: true,  color: '#25A55A' },
+  { id: 'surface', emoji: '🪟', name: 'поверхность', plan: 'освободить поверхность',   closeup: true,  color: '#F0871E' },
+  // Протирание не приходит от модели: пыли на фото не видно. Этот шаг добавляем
+  // сами — к поверхности, которую ребёнок только что освободил (см. round-core).
+  { id: 'wipe',    emoji: '🧽', name: 'протереть',   plan: 'протереть поверхность',    closeup: false, color: '#00BFA5',
+    instruction: 'Протри поверхность', target: 'Тряпкой или влажной салфеткой' },
+  { id: 'bin',     emoji: '🗑', name: 'мусор',       plan: 'вынести мусор',            closeup: false, color: '#E53935' },
+  { id: 'other',   emoji: '✨', name: 'ещё',         plan: 'убрать лишнее',            closeup: false, color: '#9AA3AE' },
+];
+export const ZONE_IDS = ZONE_KINDS.map(z => z.id);
+const ZONE_BY_ID = new Map(ZONE_KINDS.map(z => [z.id, z]));
+export function normalizeZoneKind(id) { return ZONE_BY_ID.has(String(id)) ? String(id) : 'other'; }
+export function zoneKind(id) { return ZONE_BY_ID.get(normalizeZoneKind(id)); }
+// Очаг из нескольких мелочей просит крупный план; одна коробка на полу — нет.
+// Слово модели весомее умолчания: она видит кадр, а мы — только вид очага.
+export function zoneNeedsCloseup(kind, itemsEstimate, said) {
+  if (said === true || said === false) return said;
+  return zoneKind(kind).closeup && (Number(itemsEstimate) || 0) >= 3;
+}
+
 // ── Темы (§43 ТЗ). Механика одна, различаются палитра/тексты/шаг/озвучка ────
 // Вынесены отдельно, чтобы подменить франшизные отсылки за час (§51).
 export const THEMES = {
@@ -289,22 +328,47 @@ export function cornersToXywh(box) {
   return [Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1)];
 }
 
+// Точка очага на кадре: [x,y] в долях 0..1. Кривые числа не выбрасывают очаг —
+// метка просто встаёт в центр кадра: потерять реальную работу хуже, чем
+// нарисовать кружок не там, где надо (ребёнок и так смотрит на свою комнату).
+export function clampPoint(raw) {
+  const p = Array.isArray(raw) ? raw.map(Number) : [];
+  const at = i => (Number.isFinite(p[i]) ? Math.min(1, Math.max(0, p[i])) : 0.5);
+  return [at(0), at(1)];
+}
+
 // Санитайзинг ответа /scan (§246/§276): отбрасываем неизвестные категории и
 // кривые координаты, чтобы клиент рисовал только валидные подсветки.
 export function sanitizeScan(raw) {
   const r = (raw && typeof raw === 'object') ? raw : {};
   const mode = r.mode === 'overview' ? 'overview' : 'closeup';
   if (mode === 'overview') {
-    const route = (Array.isArray(r.route) ? r.route : [])
-      .filter(s => s && isValidActionCategory(s.category) && Array.isArray(s.point) && s.point.length === 2)
-      .map((s, i) => ({
-        step: Number.isInteger(s.step) ? s.step : i + 1,
-        label: String(s.label || '').trim(),
-        point: s.point.map(Number),
-        action: String(s.action || '').trim(),
-        category: normalizeActionCategory(s.category),
-      }));
-    return { mode, route, place: cleanPlace(r.place), estimated_minutes: Number(r.estimated_minutes) || null };
+    // Модель отвечает очагами (zones). Старый формат «маршрут по точкам»
+    // (route) продолжаем принимать: модель иногда сваливается в него, и терять
+    // из-за этого весь скан нельзя — каждая точка становится очагом «ещё».
+    const raw = Array.isArray(r.zones) ? r.zones
+      : (Array.isArray(r.route) ? r.route.map(s => ({ ...s, kind: 'other', needs_closeup: false })) : []);
+    const zones = raw
+      .filter(z => z && isValidActionCategory(z.category))
+      .map((z, i) => {
+        const kind = normalizeZoneKind(z.kind);
+        const itemsEstimate = Math.max(0, Math.round(Number(z.items_estimate) || 0));
+        return {
+          id: Number.isInteger(z.id) ? z.id : (Number.isInteger(z.step) ? z.step : i + 1),
+          kind,
+          label: String(z.label || '').trim() || zoneKind(kind).name,
+          point: clampPoint(z.point),
+          category: normalizeActionCategory(z.category),
+          action: String(z.action || '').trim(),
+          itemsEstimate,
+          needsCloseup: zoneNeedsCloseup(kind, itemsEstimate, z.needs_closeup),
+        };
+      });
+    return {
+      mode, zones,
+      place: cleanPlace(r.place),
+      estimated_minutes: Number(r.estimated_minutes) || null,
+    };
   }
   const items = (Array.isArray(r.items) ? r.items : [])
     .filter(it => it && isValidActionCategory(it.category))

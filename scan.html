@@ -43,7 +43,7 @@
     .box.done::after { content: '✓'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
       font-size: 44px; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,.7); }
     @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.035); } }
-    @media (prefers-reduced-motion: reduce) { .box { animation: none; } }
+    @media (prefers-reduced-motion: reduce) { .box, .stop.now { animation: none; } }
 
     /* Режим B: точки маршрута поверх кадра комнаты. Класс .stop, а НЕ .pin:
        .pin в styles.css — это поле ввода PIN-кода (letter-spacing: 12px),
@@ -56,10 +56,26 @@
       box-shadow: 0 0 0 4px rgba(0,0,0,.35), 0 0 26px var(--c); animation: pulse 1.6s ease-in-out infinite; }
     .stop.done { width: 28px; height: 28px; background: rgba(255,255,255,.85); color: #1c7a3f;
       font-size: 16px; font-weight: 800; line-height: 28px; }
-    .stop.next { width: 20px; height: 20px; background: rgba(255,255,255,.45); box-shadow: 0 0 0 3px rgba(0,0,0,.3); }
+    .stop.next { width: 32px; height: 32px; background: rgba(255,255,255,.5); color: #1b1b1b;
+      font-size: 16px; font-weight: 800; line-height: 32px; box-shadow: 0 0 0 3px rgba(0,0,0,.3); }
     .stop .tag { position: absolute; top: 74px; left: 50%; transform: translateX(-50%); background: var(--c); color: #fff;
       font-size: 15px; font-weight: 800; line-height: 1.3; letter-spacing: normal; padding: 4px 10px;
       border-radius: 999px; white-space: nowrap; }
+    /* Брифинг: все очаги с номерами сразу — ребёнок видит весь фронт работ. */
+    .stop.zone { width: 52px; height: 52px; border: 5px solid #fff; background: var(--c); color: #fff;
+      font-size: 24px; font-weight: 800; line-height: 42px; box-shadow: 0 0 0 3px rgba(0,0,0,.35); }
+    .plan { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
+    .plan li { display: flex; gap: 10px; align-items: baseline; font-size: 18px; font-weight: 800; }
+    .plan li .n { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 30px;
+      border-radius: 999px; background: var(--line); font-size: 15px; }
+    .reward-line { font-size: 22px; font-weight: 800; line-height: 1.35; }
+
+    /* «Тут такого нет» — теперь ТОЧЕЧНО, крестиком у самой вещи: одна выдумка
+       сканера не должна стоить ребёнку всего шага. */
+    .nope { position: absolute; right: -14px; top: -14px; width: 40px; height: 40px; border-radius: 999px;
+      border: 3px solid #fff; background: #333; color: #fff; font-size: 18px; font-weight: 800; line-height: 1;
+      cursor: pointer; padding: 0; box-shadow: 0 2px 8px rgba(0,0,0,.5); }
+    .stop.now .nope { right: -18px; top: -6px; }
 
     /* Кнопка съёмки — поверх видео, крупная, по центру снизу. */
     .shutter {
@@ -136,6 +152,8 @@
         </label>
         <span class="muted" id="cam-error"></span>
       </div>
+      <!-- Видно только при съёмке очага крупным планом: подходить необязательно. -->
+      <button class="btn btn-ghost hidden" id="btn-cam-back" style="max-width:280px">← Уберу и так</button>
     </section>
 
     <!-- Шаг 2. Смотрим кадр. -->
@@ -144,6 +162,27 @@
         <div class="dots">👀</div>
         <div class="task-text" id="thinking-text">Смотрю, что тут у тебя…</div>
         <div class="muted">Это займёт пару секунд</div>
+      </div>
+    </section>
+
+    <!-- Шаг 2.5. БРИФИНГ (только режим B): что предстоит и сколько за это будет.
+         Ребёнок должен увидеть фронт работ и награду ДО первого шага, а очаги —
+         пронумерованными прямо на своей комнате. -->
+    <section id="step-brief" class="step col">
+      <h1 id="brief-title">Ого! Тут есть работа</h1>
+      <div class="stage">
+        <div class="frame">
+          <img id="brief-shot" alt="">
+          <div class="boxes" id="brief-zones"></div>
+        </div>
+        <div class="panel card col">
+          <div class="reward-line" id="brief-reward">—</div>
+          <div class="muted" id="brief-lead">Думаю, тебе предстоит:</div>
+          <ol class="plan" id="brief-plan"></ol>
+          <button class="btn btn-primary btn-big" id="btn-brief-go">Начнём по шагам!</button>
+          <button class="btn btn-ghost" id="btn-brief-retake">Снять комнату заново</button>
+          <div class="card hidden" id="brief-limit" style="border:3px dashed var(--line);font-size:15px"></div>
+        </div>
       </div>
     </section>
 
@@ -166,6 +205,9 @@
           <div class="task-text" id="task-instruction">—</div>
           <div class="muted" id="task-target">—</div>
           <button class="btn btn-primary btn-big" id="btn-done">Готово ✓</button>
+          <!-- Очаг, который видно, но не разглядеть: подходим и снимаем крупным
+               планом — дальше работает режим A. Отказаться можно. -->
+          <button class="btn btn-ghost hidden" id="btn-closeup-skip">Уберу и так ✓</button>
           <div class="muted" id="task-hint" style="font-size:14px">Можно отмечать вещи пальцем — или сразу «Готово».</div>
           <button class="btn btn-ghost" id="btn-skip">Тут такого нет</button>
           <div class="card surprise hidden" id="surprise">🎁 <span id="surprise-text">Сюрприз!</span></div>
@@ -192,7 +234,6 @@
           <input id="file-input2" type="file" accept="image/*" capture="environment" hidden>
         </label>
       </div>
-      <button class="btn btn-ghost" id="btn-skip-verify">Пропустить проверку</button>
     </section>
 
     <!-- Шаг 5. Итог. -->
@@ -284,12 +325,13 @@
     import {
       buildRound, stepTask, stepItems, isItemDone, toggleItem, completeStep, skipStep,
       isFinished, roundProgress, roundTaskText, finishRound, elapsedMs, formatDuration,
-      sessionFromRound,
+      sessionFromRound, roundBrief, zoneMarkers, activeRound, isCloseupOpen, dropItem,
+      isStepEmpty, startCloseup, finishCloseup, cancelCloseup, totalSparkles, currentZone,
     } from './js/round-core.js';
 
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-    const STEPS = ['step-room', 'step-mode', 'step-camera', 'step-thinking', 'step-round', 'step-after', 'step-done', 'step-bonus'];
+    const STEPS = ['step-room', 'step-mode', 'step-camera', 'step-thinking', 'step-brief', 'step-round', 'step-after', 'step-done', 'step-bonus'];
     const show = id => STEPS.forEach(s => $(s).classList.toggle('on', s === id));
     let toastTimer;
     const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); };
@@ -306,6 +348,10 @@
     let mode = 'closeup';
     let round = null;
     let frameBefore = null;   // стоп-кадр «до»: и в /scan, и потом в /verify
+    let frameZone = null;     // крупный план очага: живёт только пока открыт вложенный раунд
+    // Куда смотрит камера прямо сейчас: вся комната/поверхность или очаг внутри комнаты.
+    let shootTarget = 'main';
+    let limitNote = '';       // «это место сегодня уже убирали» — считается сразу после скана
     let timerId = null;
 
     document.documentElement.setAttribute('data-theme', th.id);
@@ -314,6 +360,7 @@
     // «Синий грузовик — в ящик с игрушками».
     function sayTask(t) {
       if (!t) return;
+      if (t.closeup) { say(`${t.title}. Подойди поближе и сфотографируй.`); return; }
       say(t.mode === 'overview'
         ? [t.title, t.instruction].filter(Boolean).join(' — ')
         : `${t.instruction}. Их ${t.total}.`);
@@ -368,7 +415,7 @@
     function stopTimer() { clearInterval(timerId); timerId = null; }
 
     function renderHeader() {
-      $('sparkles').textContent = `${th.currencyEmoji} ${round ? round.sparkles : 0}`;
+      $('sparkles').textContent = `${th.currencyEmoji} ${round ? totalSparkles(round) : 0}`;
       const est = round?.estimatedMinutes;
       $('estimate').textContent = est ? `≈ ${est} мин` : '';
       $('estimate').classList.toggle('hidden', !est);
@@ -377,7 +424,7 @@
       $('room-chip').textContent = room ? `${room.icon || '🏠'} ${room.name}` : 'Уборка';
     }
 
-    // ── Раунд: подсветка одного цвета (A) или точка маршрута (B) + панель ──
+    // ── Раунд: подсветка одного цвета (A) или очаг комнаты (B) + панель ──
     function renderRound() {
       const task = stepTask(round);
       if (!task) { goVerify(); return; }
@@ -386,27 +433,58 @@
       $('task-emoji').style.setProperty('--c', task.color);
       $('task-done').textContent = overview ? task.number : task.done;
       $('task-total').textContent = overview ? task.of : task.total;
-      $('task-of').textContent = overview ? 'Точка маршрута' : `Шаг ${task.number} из ${task.of}`;
+      $('task-of').textContent = overview
+        ? `Очаг ${task.number} из ${task.of}`
+        : (task.inCloseup ? `${task.zoneLabel}: шаг ${task.number} из ${task.of}` : `Шаг ${task.number} из ${task.of}`);
       $('task-title').textContent = task.title;
       $('task-title').classList.toggle('hidden', !task.title);
       $('task-instruction').textContent = task.instruction;
-      $('task-target').textContent = `→ ${task.target}`;
-      $('btn-done').textContent = overview ? 'Убрал ✓' : 'Готово ✓';
-      $('btn-skip').textContent = overview ? 'Тут ничего нет' : 'Тут такого нет';
-      $('task-hint').textContent = overview
-        ? 'Дойди, убери — и жми по точке или по кнопке.'
-        : 'Можно отмечать вещи пальцем — или сразу «Готово».';
+      $('task-target').textContent = task.target ? `→ ${task.target}` : '';
 
-      $('boxes').innerHTML = overview ? routePins(task) : colorBoxes(task);
+      // Очаг, который видно, но не разглядеть: главная кнопка — сфотографировать.
+      const askCloseup = !!task.closeup;
+      $('btn-done').textContent = askCloseup ? '📷 Подойти и сфоткать'
+        : (overview ? 'Убрал ✓' : 'Готово ✓');
+      $('btn-closeup-skip').classList.toggle('hidden', !askCloseup);
+      $('btn-skip').textContent = overview ? 'Тут чисто, пропустить' : 'Тут такого нет';
+      $('btn-skip').classList.toggle('hidden', askCloseup);
+      $('task-hint').textContent = askCloseup
+        ? 'Тут мелочи, издалека не разобрать. Подойди — и я подскажу по шагам.'
+        : (overview
+          ? 'Убрал — жми по кружку или по кнопке. Крестик — если тут ничего нет.'
+          : 'Отмечай вещи пальцем — или сразу «Готово». Крестик у вещи — если её тут нет.');
+
+      $('boxes').innerHTML = task.inCloseup || !overview ? colorBoxes(task) : zonePins(task);
+      wireMarkers(overview && !task.inCloseup);
+
+      $('surprise').classList.toggle('hidden', !activeRound(round).surpriseNow);
+      $('place-limit').textContent = limitNote;
+      $('place-limit').classList.toggle('hidden', !limitNote);
+      renderHeader();
+    }
+
+    // Кто-то из подсвеченного тапнут: «убрал» — или «а тут этого нет» (крестик).
+    function wireMarkers(isZone) {
+      $('boxes').querySelectorAll('[data-nope]').forEach(el => {
+        el.onclick = (e) => { e.stopPropagation(); dropOne(+el.dataset.nope); };
+      });
       $('boxes').querySelectorAll('[data-item]').forEach(el => {
-        el.onclick = overview
-          // В обходе тап по большой точке = «убрал»: рука уже там, где предмет.
+        el.onclick = isZone
+          // В комнате тап по большому кружку = «убрал»: рука уже там, где очаг.
           ? () => closeStep()
           : () => { round = toggleItem(round, +el.dataset.item); renderRound(); };
       });
+    }
 
-      $('surprise').classList.toggle('hidden', !round.surpriseNow);
-      renderHeader();
+    // Крестик «тут этого нет» — ТОЧЕЧНО, по одной вещи. Раньше единственная
+    // выдумка сканера стоила ребёнку всего шага; теперь шаг закрывается сам,
+    // только если из него вычеркнули всё.
+    function dropOne(itemId) {
+      round = dropItem(round, itemId);
+      if (!isStepEmpty(round)) { renderRound(); return; }
+      toast('Ладно, тут и правда ничего нет');
+      round = skipStep(round);
+      afterStep(null);
     }
 
     // Режим A: рамки вокруг предметов одного цвета.
@@ -415,21 +493,63 @@
         const [x, y, w, h] = it.box;
         return `<button class="box ${isItemDone(round, it.id) ? 'done' : ''}" data-item="${it.id}"
           style="--c:${task.color};left:${x * 100}%;top:${y * 100}%;width:${w * 100}%;height:${h * 100}%">
-          ${it.label ? `<span class="tag">${esc(it.label)}</span>` : ''}</button>`;
+          ${it.label ? `<span class="tag">${esc(it.label)}</span>` : ''}
+          <span class="nope" data-nope="${it.id}" role="button" title="тут этого нет">✕</span></button>`;
       }).join('');
     }
 
-    // Режим B: вся дорога сразу — пройденное, текущая точка, что впереди.
-    function routePins(task) {
-      return round.items.map((it, i) => {
-        const [x, y] = it.point || [0.5, 0.5];
+    // Режим B: вся комната сразу — пройденные очаги, текущий, что впереди.
+    // Номера те же, что ребёнок видел на брифинге (zoneMarkers).
+    function zonePins(task) {
+      const stepOf = new Map();
+      round.steps.forEach((st, i) => st.itemIds.forEach(id => stepOf.set(id, i)));
+      const curId = (round.steps[round.index]?.itemIds || [])[0];
+      const all = zoneMarkers(round);
+      const cur = all.find(m => m.id === curId);
+      // Протирание метку не занимает: она у него общая с поверхностью. Показываем
+      // её, только когда протирание — текущий шаг, и тогда прячем «✓» поверхности,
+      // чтобы две метки не наезжали друг на друга в одной точке.
+      const same = (a, b) => a[0] === b[0] && a[1] === b[1];
+      return all.filter(m => (m.kind !== 'wipe' || m.id === curId)
+        && !(cur && m.id !== curId && same(m.point, cur.point))).map(m => {
+        const i = stepOf.get(m.id);
         const state = i < round.index ? 'done' : (i === round.index ? 'now' : 'next');
-        const pos = `left:${x * 100}%;top:${y * 100}%`;
+        const pos = `left:${m.point[0] * 100}%;top:${m.point[1] * 100}%`;
+        const num = m.no ?? '🧽';
         if (state === 'done') return `<span class="stop done" style="${pos}">✓</span>`;
-        if (state === 'next') return `<span class="stop next" style="${pos}"></span>`;
-        return `<button class="stop now" data-item="${it.id}" style="--c:${task.color};${pos}">${i + 1}
-          ${it.label ? `<span class="tag">${esc(it.label)}</span>` : ''}</button>`;
+        if (state === 'next') return `<span class="stop next" style="${pos}">${num}</span>`;
+        return `<button class="stop now" data-item="${m.id}" style="--c:${task.color};${pos}">${num}
+          ${m.label ? `<span class="tag">${esc(m.label)}</span>` : ''}
+          <span class="nope" data-nope="${m.id}" role="button" title="тут ничего нет">✕</span></button>`;
       }).join('');
+    }
+
+    // ── Брифинг (режим B): фронт работ и награда ДО первого шага ──
+    // Ребёнок должен один раз увидеть комнату целиком с пронумерованными очагами
+    // и понять, за что берётся и сколько за это будет. Дальше — только по шагам.
+    function renderBrief() {
+      const b = roundBrief(round);
+      $('brief-shot').src = frameBefore.url;
+      $('brief-zones').innerHTML = zoneMarkers(round).filter(m => m.no !== null).map(m =>
+        `<span class="stop zone" style="--c:${m.color};left:${m.point[0] * 100}%;top:${m.point[1] * 100}%">${m.no}</span>`
+      ).join('');
+      $('brief-title').textContent = b.zones > 2 ? 'Ого! Тут есть работа' : 'Так, посмотрим…';
+      $('brief-reward').textContent = limitNote
+        ? `Тут ${b.zones} мест и ${b.steps} шагов.`
+        : `Если уберёшь всю комнату с моей помощью — заработаешь не меньше ${b.minSparkles} ${th.currencyEmoji}!`;
+      $('brief-plan').innerHTML = b.plan.map(x =>
+        `<li><span class="n">${x.no ?? x.emoji}</span><span>${esc(x.text)}</span></li>`).join('');
+      $('brief-lead').textContent = b.minutes
+        ? `Думаю, тебе предстоит (минут на ${b.minutes}):`
+        : 'Думаю, тебе предстоит:';
+      $('brief-limit').textContent = limitNote;
+      $('brief-limit').classList.toggle('hidden', !limitNote);
+      show('step-brief');
+      renderHeader();
+      const plan = b.plan.map(x => x.text).join(', ');
+      say(limitNote
+        ? `Тут ${b.zones} мест: ${plan}. Начнём по шагам?`
+        : `Ого! Если уберёшь всю комнату, заработаешь не меньше ${b.minSparkles}. Думаю, тебе предстоит: ${plan}. Начнём по шагам?`);
     }
 
     // Сюрприз (§330) — живая фраза от персонажа, но экран её не ждёт.
@@ -460,14 +580,16 @@
           return;
         }
         $('shot').src = frame.url;
-        // Награда за это место на сегодня исчерпана? Скажем сразу.
+        // Награда за это место на сегодня исчерпана? Скажем сразу — и на
+        // брифинге, и в панели раунда: обещать искорки, которых не будет, нельзя.
         const spent = myRewards && isPlaceExhausted(myRewards, round.roomId, round.place);
-        $('place-limit').textContent = spent
+        limitNote = spent
           ? `${round.place ? `«${round.place}»` : 'Это место'} сегодня уже убирали ${PLACE_DAILY_LIMIT} раза — искорок и карточки за него сегодня не будет. Другое место в этой комнате считается.`
           : '';
-        $('place-limit').classList.toggle('hidden', !spent);
         setBusy(true);
         startTimer();
+        // Комнату сперва показываем целиком: что предстоит и сколько за это дадут.
+        if (round.mode === 'overview') { renderBrief(); return; }
         show('step-round');
         renderRound();
         sayTask(stepTask(round));
@@ -477,6 +599,67 @@
         toast(e?.code === 429 ? 'Сканер отдыхает до завтра' : 'Не получилось разглядеть — сними ещё раз');
         await goCamera();
       }
+    }
+
+    // ── Крупный план внутри очага (режим B → режим A) ──
+    // «На столе что-то мелкое» с порога не разобрать — ребёнок подходит и
+    // снимает стол. Дальше внутри шага работает обычный раунд по цветам, а его
+    // искорки уезжают в общий счёт комнаты.
+    async function goZoneCamera() {
+      const zone = currentZone(round);
+      if (!zone) return;
+      shootTarget = 'zone';
+      $('cam-hint').textContent = `Подойди к «${zone.label}» и сфоткай поближе — чтобы было видно каждую вещь`;
+      $('btn-cam-back').classList.remove('hidden');
+      show('step-camera');
+      renderHeader();
+      say(`Подойди к ${zone.label} и сфотографируй поближе`);
+      await openCamera($('video'), $('cam-fallback'));
+    }
+
+    async function analyzeZone(frame) {
+      const zone = currentZone(round);
+      show('step-thinking');
+      $('thinking-text').textContent = 'Смотрю, что тут у тебя…';
+      try {
+        const scanned = await scan(frame.base64, {
+          mode: 'closeup', roomType: room?.type, roomName: room?.name,
+          surfaces: room?.surfaces, zone: zone?.label,
+        });
+        const next = startCloseup(round, scanned);
+        if (!next.sub) {
+          // Подошли, сняли — а там уже чисто. Шаг закрываем без начисления:
+          // искорки платим за уборку, а не за фотографию.
+          revokeFrame(frame);
+          toast('Тут и правда чисто — идём дальше');
+          round = skipStep(round);
+          backToRoom();
+          afterStep(null);
+          return;
+        }
+        round = next;
+        if (frameZone) revokeFrame(frameZone);
+        frameZone = frame;
+        $('shot').src = frame.url;
+        show('step-round');
+        renderRound();
+        sayTask(stepTask(round));
+      } catch (e) {
+        console.error(e);
+        revokeFrame(frame);
+        toast(e?.code === 429 ? 'Сканер отдыхает до завтра' : 'Не получилось разглядеть — убери как видишь');
+        backToRoom();
+        show('step-round');
+        renderRound();
+      }
+    }
+
+    // Возврат из крупного плана к кадру комнаты.
+    function backToRoom() {
+      shootTarget = 'main';
+      $('btn-cam-back').classList.add('hidden');
+      if (frameZone) { revokeFrame(frameZone); frameZone = null; }
+      if (frameBefore) $('shot').src = frameBefore.url;
     }
 
     // ── Проверка «после» ──
@@ -517,7 +700,7 @@
       if (!result.done && result.missed.length) {
         // §296: называем ОДНУ вещь, а не список, и даём переснять.
         $('after-title').textContent = `Почти! Осталось: ${result.missed[0]}`;
-        $('after-sub').textContent = 'Убери — и сними ещё раз. Или закончи как есть.';
+        $('after-sub').textContent = 'Убери — и сними ещё раз, я посмотрю.';
         show('step-after');
         say(`Почти! Осталось убрать: ${result.missed[0]}`);
         await openCamera($('video2'), $('cam-fallback2'));
@@ -652,6 +835,8 @@
 
     // ── Переходы ──
     async function goCamera() {
+      shootTarget = 'main';
+      $('btn-cam-back').classList.add('hidden');
       $('cam-hint').textContent = mode === 'overview'
         ? 'Встань у двери и покажи всю комнату целиком — и жми большую кнопку'
         : 'Наведи камеру на стол или полку — и жми большую кнопку';
@@ -679,6 +864,8 @@
       const frame = await grabFrame(source);
       if (!frame) { toast('Темновато — включи свет и сними ещё раз'); return; }
       stopCamera();
+      // Кадр очага — не «фото до» всей комнаты: проверять в конце будем комнату.
+      if (shootTarget === 'zone') { await analyzeZone(frame); return; }
       if (frameBefore) revokeFrame(frameBefore);
       frameBefore = frame;
       await analyze(frame);
@@ -697,22 +884,53 @@
     $('file-input2').onchange = e => { const f = e.target.files?.[0]; if (f) shootAfter(f); e.target.value = ''; };
     function closeStep() {
       const task = stepTask(round);
+      // Очаг просит крупный план — «Готово» ведёт к камере, а не закрывает шаг.
+      if (task?.closeup) { goZoneCamera(); return; }
       round = completeStep(round);
-      if (round.surpriseNow) celebrate(task);
+      afterStep(task);
+    }
+    // Один хвост на все способы закрыть шаг: сюрприз, возврат из крупного
+    // плана, конец раунда. Иначе три ветки разъезжаются на четвёртой правке.
+    function afterStep(prevTask) {
+      let surprise = activeRound(round).surpriseNow;
+      if (isCloseupOpen(round) && isFinished(round)) {
+        round = finishCloseup(round);
+        backToRoom();
+        surprise = surprise || round.surpriseNow;
+      }
+      if (surprise) celebrate(prevTask);
       if (isFinished(round)) { renderHeader(); goVerify(); return; }
       renderRound();
       sayTask(stepTask(round));
     }
     $('btn-done').onclick = closeStep;
-    $('btn-skip').onclick = () => {
-      round = skipStep(round);
-      if (isFinished(round)) { renderHeader(); goVerify(); return; }
-      renderRound();
+    // «Уберу и так»: очаг остаётся обычным шагом, без крупного плана.
+    $('btn-closeup-skip').onclick = () => {
+      const task = stepTask(round);
+      round = completeStep(round);
+      afterStep(task);
     };
-    $('btn-skip-verify').onclick = () => { stopCamera(); finish({ done: false, status: 'incomplete', praise: th.praiseWord, missed: [] }); };
+    $('btn-skip').onclick = () => { round = skipStep(round); afterStep(null); };
+    $('btn-brief-go').onclick = () => { show('step-round'); renderRound(); sayTask(stepTask(round)); };
+    $('btn-brief-retake').onclick = async () => {
+      stopTimer(); setBusy(false);
+      round = null;
+      if (frameBefore) { revokeFrame(frameBefore); frameBefore = null; }
+      await goCamera();
+    };
+    $('btn-cam-back').onclick = () => {
+      // Камеру не открыть или ребёнок передумал подходить: убираем очаг как есть.
+      stopCamera();
+      const task = stepTask(round);
+      backToRoom();
+      round = completeStep(round);
+      afterStep(task);
+    };
     $('btn-again').onclick = async () => {
       if (frameBefore) { revokeFrame(frameBefore); frameBefore = null; }
-      round = null; stopTimer(); $('timer').textContent = '0:00';
+      if (frameZone) { revokeFrame(frameZone); frameZone = null; }
+      round = null; limitNote = ''; shootTarget = 'main';
+      stopTimer(); $('timer').textContent = '0:00';
       $('estimate').classList.add('hidden');
       $('card-win').classList.add('hidden');
       $('bonus-offer').classList.add('hidden'); bonus = null;

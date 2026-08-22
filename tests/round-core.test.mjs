@@ -6,8 +6,11 @@ import {
   stepItems, stepTask, toggleItem, isItemDone, completeStep, skipStep,
   roundProgress, roundTaskText, finishRound, elapsedMs, formatDuration,
   applyRoundToRewards, sessionFromRound,
+  ZONE_ORDER, zoneOrderIndex, zoneMarkers, roundBrief, currentZone, needsCloseup,
+  startCloseup, finishCloseup, cancelCloseup, isCloseupOpen, totalSparkles, activeRound,
+  dropItem, isItemDropped, isStepEmpty,
 } from '../js/round-core.js';
-import { ACTION_IDS, SPARKLES, emptyRewards, sanitizeScan } from '../js/family-core.js';
+import { ACTION_IDS, SPARKLES, ZONE_IDS, emptyRewards, sanitizeScan } from '../js/family-core.js';
 
 // Сырой ответ сканера: три категории вперемешку, порядок «как увидела модель».
 const RAW_SCAN = {
@@ -188,7 +191,9 @@ test('пустой скан — раунд без шагов, сразу «чи�
   assert.equal(applyRoundToRewards(emptyRewards(), r).currency, 0);
 });
 
-// ── Режим B: обход комнаты по точкам (§268) ─────────────────────────────────
+// ── Режим B, старый формат ответа: маршрут по точкам ────────────────────────
+// Модель иногда сваливается обратно в него. Терять из-за этого весь скан нельзя:
+// каждая точка становится очагом вида «ещё», и раунд работает как раньше.
 const RAW_ROUTE = {
   mode: 'overview',
   route: [
@@ -203,19 +208,19 @@ const route0 = () => buildRound(sanitizeScan(RAW_ROUTE), {
   now: fixed(0), rand: () => 0,
 });
 
-test('обход комнаты: шаг — одна точка, порядок модельный (не наш словарь)', () => {
+test('старый формат (route по точкам) ещё читается: точка = очаг «ещё»', () => {
   const r = route0();
   assert.equal(r.mode, 'overview');
   assert.equal(r.estimatedMinutes, 6);
   assert.equal(r.steps.length, 3, 'три точки — три шага, а не два цвета');
   assert.deepEqual(r.steps.map(s => s.itemIds), [[1], [2], [3]]);
   assert.deepEqual(r.steps.map(s => s.category), ['toys', 'toys', 'textile'],
-    'порядок обхода сохранён: гонять ребёнка по комнате «по нашему порядку цветов» нельзя');
+    'все точки одного вида — порядок модели внутри вида сохраняется');
   assert.equal(r.items[0].point.length, 2);
   assert.equal(r.items[0].box, undefined, 'у точек нет рамок');
 });
 
-test('задание точки: своё действие модели важнее общего текста категории', () => {
+test('задание очага: своё действие модели важнее общего текста категории', () => {
   const t = stepTask(route0());
   assert.equal(t.mode, 'overview');
   assert.equal(t.title, 'синий грузовик');
@@ -244,7 +249,8 @@ test('текст для /verify в обходе не повторяет одну
   r = completeStep(r, { now: fixed(1), rand: () => 0 });
   r = completeStep(r, { now: fixed(2), rand: () => 0 }); // обе игрушки
   r = completeStep(r, { now: fixed(3), rand: () => 0 }); // носки
-  assert.match(roundTaskText(r), /^Игрушки в свой ящик; Текстиль/);
+  // Для /verify берём формулировку очага, а не общий текст категории: она точнее.
+  assert.equal(roundTaskText(r), 'в ящик с игрушками; в корзину');
   assert.equal(roundTaskText(route0()), 'убрать комнату');
 });
 
@@ -279,7 +285,7 @@ test('полная урна — всегда последний шаг, даже
   assert.deepEqual(LAST_CATEGORIES, ['bin_full']);
 });
 
-test('в обходе комнаты урна тоже уезжает в конец, остальной порядок модельный', () => {
+test('в обходе комнаты урна уезжает в конец и в старом формате тоже', () => {
   const r = buildRound(sanitizeScan({ mode: 'overview', route: [
     { step: 1, label: 'урна', point: [0.1, 0.9], action: 'вынести', category: 'bin_full' },
     { step: 2, label: 'мишка', point: [0.4, 0.6], action: 'в ящик', category: 'toys' },
@@ -294,4 +300,200 @@ test('порядок раунда покрывает весь словарь и 
   assert.deepEqual([...ROUND_ORDER].sort(), [...ACTION_IDS].sort());
   assert.equal(ROUND_ORDER[ROUND_ORDER.length - 1], 'bin_full');
   assert.ok(ROUND_ORDER.indexOf('floor') < ROUND_ORDER.indexOf('belongs_elsewhere'));
+});
+
+
+// ── Режим B: очаги комнаты, план обхода и крупный план (§268) ───────────────
+// Комната раскладывается не на вещи, а на ОЧАГИ: стул с одеждой, пол, стол,
+// урна. Порядок наш и повторяет то, как убирается человек, а очаг, который
+// видно, но не разглядеть, просит подойти и снять крупным планом.
+const RAW_ROOM = {
+  mode: 'overview',
+  place: 'детская',
+  estimated_minutes: 12,
+  zones: [
+    { id: 1, kind: 'bin', label: 'полная урна', point: [0.9, 0.85], category: 'bin_full', action: 'вынеси мусор', items_estimate: 1 },
+    { id: 2, kind: 'desk', label: 'письменный стол', point: [0.6, 0.4], category: 'paper', action: 'наведи порядок на столе', items_estimate: 9 },
+    { id: 3, kind: 'floor', label: 'коробки на полу', point: [0.35, 0.9], category: 'floor', action: 'отнеси коробки в шкаф', items_estimate: 3 },
+    { id: 4, kind: 'chair', label: 'одежда на стуле', point: [0.2, 0.55], category: 'textile', action: 'убери одежду со стула', items_estimate: 4 },
+  ],
+};
+const room0 = () => buildRound(sanitizeScan(RAW_ROOM), {
+  roomId: 'maya', roomName: 'Комната Майи', themeId: 'jedi', profileId: 'kid1',
+  now: fixed(0), rand: () => 0,
+});
+
+test('план обхода наш: стул → пол → стол → протереть → мусор', () => {
+  const r = room0();
+  assert.deepEqual(r.items.map(z => z.kind), ['chair', 'floor', 'desk', 'wipe', 'bin'],
+    'сначала быстрое и крупное, мелкая разборка стола позже, урна последней');
+  assert.equal(r.steps.length, 5);
+  assert.equal(r.estimatedMinutes, 12);
+  assert.equal(r.place, 'детская');
+  assert.ok(zoneOrderIndex('chair') < zoneOrderIndex('desk'));
+  assert.ok(zoneOrderIndex('wipe') < zoneOrderIndex('bin'), 'протирают до выноса мусора');
+  assert.deepEqual([...ZONE_ORDER].sort(), [...ZONE_IDS].sort(), 'порядок покрывает весь словарь очагов');
+});
+
+test('«протереть» добавляем сами: модель пыль на фото не видит', () => {
+  const r = room0();
+  const wipe = r.items.find(z => z.kind === 'wipe');
+  assert.equal(wipe.label, 'письменный стол');
+  assert.equal(wipe.action, 'протри письменный стол');
+  assert.deepEqual(wipe.point, [0.6, 0.4], 'метка та же, что у самой поверхности');
+  // Без поверхностей протирать нечего — лишнего шага не выдумываем.
+  const bare = buildRound(sanitizeScan({ mode: 'overview', zones: [
+    { id: 1, kind: 'chair', label: 'стул', point: [0.2, 0.5], category: 'textile' },
+  ] }), { now: fixed(0), rand: () => 0 });
+  assert.deepEqual(bare.items.map(z => z.kind), ['chair']);
+  // И не больше двух за раунд: три протирания — уже наказание.
+  const many = buildRound(sanitizeScan({ mode: 'overview', zones: [
+    { id: 1, kind: 'desk', label: 'стол', point: [0.1, 0.1], category: 'paper' },
+    { id: 2, kind: 'shelf', label: 'полка', point: [0.2, 0.2], category: 'paper' },
+    { id: 3, kind: 'surface', label: 'подоконник', point: [0.3, 0.3], category: 'paper' },
+  ] }), { now: fixed(0), rand: () => 0 });
+  assert.equal(many.items.filter(z => z.kind === 'wipe').length, 2);
+});
+
+test('брифинг: сколько очагов, что предстоит и сколько за это будет', () => {
+  const b = roundBrief(room0());
+  assert.equal(b.zones, 4, '«протереть» отдельным местом не считается');
+  assert.equal(b.steps, 5);
+  assert.equal(b.minutes, 12);
+  assert.equal(b.closeups, 1, 'стол просит крупный план');
+  // Обещание намеренно занижено: крупный план стола добавит искорок сверху.
+  assert.equal(b.minSparkles, 5 * SPARKLES.step + SPARKLES.room);
+  assert.deepEqual(b.plan.map(x => x.text), [
+    'убери одежду со стула', 'отнеси коробки в шкаф', 'наведи порядок на столе',
+    'протри письменный стол', 'вынеси мусор',
+  ]);
+  assert.deepEqual(b.plan.map(x => x.no), [1, 2, 3, null, 4], 'номера — те же, что на кадре');
+});
+
+test('нумерация меток одна для брифинга и для раунда', () => {
+  const m = zoneMarkers(room0());
+  assert.deepEqual(m.map(x => x.no), [1, 2, 3, null, 4]);
+  assert.equal(m[0].label, 'одежда на стуле');
+  assert.equal(m[3].kind, 'wipe', 'протирание метку делит с поверхностью, номера не занимает');
+  assert.deepEqual(m[3].point, m[2].point);
+});
+
+test('очаг с мелочью просит крупный план, очевидный — нет', () => {
+  const r = room0();
+  assert.equal(needsCloseup(r), false, 'стул с одеждой и так понятен');
+  assert.equal(currentZone(r).kind, 'chair');
+  const atDesk = completeStep(completeStep(r, { now: fixed(1) }), { now: fixed(2) });
+  assert.equal(currentZone(atDesk).kind, 'desk');
+  assert.equal(needsCloseup(atDesk), true);
+  assert.equal(stepTask(atDesk).closeup, true);
+  // Слово модели весомее умолчания по виду очага.
+  const said = buildRound(sanitizeScan({ mode: 'overview', zones: [
+    { id: 1, kind: 'desk', label: 'стол', point: [0.5, 0.5], category: 'paper', items_estimate: 9, needs_closeup: false },
+  ] }), { now: fixed(0), rand: () => 0 });
+  assert.equal(needsCloseup(said), false);
+});
+
+test('крупный план внутри очага: искорки уезжают в общий счёт комнаты', () => {
+  let r = completeStep(completeStep(room0(), { now: fixed(1) }), { now: fixed(2) }); // стул, пол
+  assert.equal(r.sparkles, 2 * SPARKLES.step);
+  r = startCloseup(r, sanitizeScan({ mode: 'closeup', place: 'стол у окна', items: [
+    { id: 1, label: 'тетрадь', category: 'paper', box: [0.1, 0.1, 0.2, 0.2] },
+    { id: 2, label: 'фантик', category: 'trash', box: [0.3, 0.1, 0.4, 0.2] },
+  ] }), { now: fixed(3), rand: () => 0 });
+  assert.ok(isCloseupOpen(r));
+  assert.equal(r.place, 'детская', 'место комнаты крупный план не переписывает: лимит считается по нему');
+  assert.equal(stepTask(r).mode, 'closeup', 'внутри очага работает обычный раунд по цветам');
+  assert.equal(stepTask(r).inCloseup, true);
+  assert.equal(stepTask(r).zoneLabel, 'письменный стол');
+  r = completeStep(r, { now: fixed(4), rand: () => 0 });
+  assert.equal(totalSparkles(r), 3 * SPARKLES.step, 'искорка за шаг внутри очага видна сразу');
+  r = completeStep(r, { now: fixed(5), rand: () => 0 });
+  assert.ok(isFinished(r), 'крупный план отработан');
+  r = finishCloseup(r, { now: fixed(6), rand: () => 0 });
+  assert.equal(isCloseupOpen(r), false);
+  // Два шага внутри плюс сам очаг — стол оплачен полностью.
+  assert.equal(r.sparkles, 5 * SPARKLES.step);
+  assert.equal(currentZone(r).kind, 'wipe', 'после стола — протереть стол');
+  assert.equal(r.closeups.length, 1);
+  assert.equal(sessionFromRound(r).closeups[0].label, 'письменный стол');
+});
+
+test('крупный план не открылся (там уже чисто) — очаг остаётся шагом комнаты', () => {
+  const r = completeStep(completeStep(room0(), { now: fixed(1) }), { now: fixed(2) });
+  const same = startCloseup(r, sanitizeScan({ mode: 'closeup', items: [] }), { now: fixed(3), rand: () => 0 });
+  assert.equal(same.sub, null, 'пустой скан вложенный раунд не открывает');
+  assert.equal(currentZone(same).kind, 'desk', 'шаг никуда не делся');
+  // «Уберу и так» — тоже возврат к обычному шагу, без потери прогресса.
+  const opened = startCloseup(r, sanitizeScan({ mode: 'closeup', items: [
+    { id: 1, label: 'ручка', category: 'stationery', box: [0.1, 0.1, 0.2, 0.2] },
+  ] }), { now: fixed(3), rand: () => 0 });
+  const back = cancelCloseup(opened);
+  assert.equal(isCloseupOpen(back), false);
+  assert.equal(back.sparkles, r.sparkles);
+  assert.equal(currentZone(back).kind, 'desk');
+});
+
+test('прогресс считает крупный план вместе с комнатой — полоска не стоит', () => {
+  let r = completeStep(room0(), { now: fixed(1) });
+  const before = roundProgress(r);
+  r = completeStep(r, { now: fixed(2) });
+  r = startCloseup(r, sanitizeScan({ mode: 'closeup', items: [
+    { id: 1, label: 'тетрадь', category: 'paper', box: [0.1, 0.1, 0.2, 0.2] },
+    { id: 2, label: 'фантик', category: 'trash', box: [0.3, 0.1, 0.4, 0.2] },
+  ] }), { now: fixed(3), rand: () => 0 });
+  const inside = roundProgress(r);
+  assert.equal(inside.stepsTotal, 7, '5 очагов + 2 цвета на столе');
+  r = completeStep(r, { now: fixed(4), rand: () => 0 });
+  assert.ok(roundProgress(r).percent > inside.percent, 'шаг внутри очага двигает полоску');
+  assert.ok(inside.percent >= before.percent);
+});
+
+// ── «Тут этого нет» — точечно, по одной вещи ────────────────────────────────
+test('вычёркивание одной вещи не роняет весь шаг', () => {
+  let r = round0(); // бумаги: тетрадь + чек
+  assert.equal(stepTask(r).category, 'trash');
+  r = completeStep(r, { now: fixed(1), rand: () => 0 }); // мусор
+  r = completeStep(r, { now: fixed(2), rand: () => 0 }); // посуда
+  assert.equal(stepTask(r).category, 'paper');
+  assert.equal(stepTask(r).total, 2);
+  r = dropItem(r, 4); // чека на столе нет — сканер придумал
+  assert.ok(isItemDropped(r, 4));
+  assert.equal(stepTask(r).total, 1, 'тетрадь никуда не делась');
+  assert.deepEqual(stepItems(r).map(it => it.id), [1]);
+  assert.equal(isStepEmpty(r), false);
+  r = completeStep(r, { now: fixed(3), rand: () => 0 });
+  assert.equal(r.sparkles, 3 * SPARKLES.step, 'шаг закрыт и оплачен: работа была');
+  assert.deepEqual(r.doneItemIds.includes(4), false, 'вычеркнутое убранным не считается');
+  assert.equal(sessionFromRound(r).itemsDropped, 1);
+});
+
+test('шаг, в котором вычеркнули всё, закрывается без искорки', () => {
+  let r = round0();
+  r = dropItem(r, 2); // единственный мусор
+  assert.equal(isStepEmpty(r), true);
+  r = completeStep(r, { now: fixed(1), rand: () => 0 });
+  assert.equal(r.sparkles, 0, 'платим за уборку, а не за нажатие «Готово»');
+  assert.equal(r.steps[0].skipped, true);
+  assert.equal(r.index, 1);
+});
+
+test('вычеркнутое снимает отметку «убрал» — иначе шаг оплачивался бы дважды', () => {
+  let r = round0();
+  r = toggleItem(r, 2);
+  assert.ok(isItemDone(r, 2));
+  r = dropItem(r, 2);
+  assert.equal(isItemDone(r, 2), false);
+  assert.equal(activeRound(r).droppedItemIds.length, 1);
+});
+
+test('вычёркивание работает и внутри крупного плана', () => {
+  let r = completeStep(completeStep(room0(), { now: fixed(1) }), { now: fixed(2) });
+  r = startCloseup(r, sanitizeScan({ mode: 'closeup', items: [
+    { id: 1, label: 'тетрадь', category: 'paper', box: [0.1, 0.1, 0.2, 0.2] },
+    { id: 2, label: 'чек', category: 'paper', box: [0.3, 0.1, 0.4, 0.2] },
+  ] }), { now: fixed(3), rand: () => 0 });
+  r = dropItem(r, 2);
+  assert.equal(r.sub.droppedItemIds.length, 1, 'вычеркнули внутри очага, а не в комнате');
+  assert.deepEqual(r.droppedItemIds, []);
+  assert.equal(stepTask(r).total, 1);
 });
