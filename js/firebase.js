@@ -37,6 +37,8 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 export const storage = getStorage(app);
+// Реальный projectId, в который ходит приложение (для диагностики).
+export const projectId = app.options.projectId;
 
 // Вход — один раз на устройство (§139): сессия не истекает, ребёнок больше не
 // видит экран входа. browserLocalPersistence переживает перезапуск браузера/PWA.

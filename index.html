@@ -79,7 +79,7 @@
     import {
       initAuth, signInEmail, registerEmail, signInGoogle, signInChildWithPin, signOutUser,
       hasChildDevice, childDeviceLabel, currentUid, listMyFamilies, ensureFirstFamily, getFamily,
-      resolveActiveFamily, getActiveFamilyId, listProfiles,
+      resolveActiveFamily, getActiveFamilyId, listProfiles, projectId,
     } from './js/store.js';
     import { theme } from './js/family-core.js';
 
@@ -94,7 +94,8 @@
       if (e?.code) parts.push('code: ' + e.code);
       if (e?.step) parts.push('шаг: ' + e.step + ' (' + (e.path || '') + ')');
       parts.push('message: ' + (e?.message || String(e)));
-      parts.push('project: help-me-clean-7969f');
+      parts.push('РЕАЛЬНЫЙ project: ' + projectId);
+      parts.push('uid (вошёл?): ' + (currentUid() || 'НЕТ — не авторизован'));
       $('err-text').textContent = parts.join('\n');
       $('err-box').classList.remove('hidden');
       console.error(e);

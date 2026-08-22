@@ -12,8 +12,10 @@ import {
   db, doc, getDoc, setDoc, collection, getDocs, query, where,
   auth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
   getRedirectResult, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
-  authReady, createSecondaryAuth,
+  authReady, createSecondaryAuth, projectId,
 } from './firebase.js';
+
+export { projectId };
 import {
   makeFamilyId, makeJoinCode, normalizeJoinCode, pickActiveFamily,
   PARENT, CHILD, DEFAULT_THEME,
