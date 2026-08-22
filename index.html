@@ -153,14 +153,21 @@
 
     // ── Старт ──
     (async () => {
-      const user = await initAuth();
-      if (user && currentUid()) { await afterLogin(); return; }
-      if (hasChildDevice()) {
-        const label = childDeviceLabel();
-        if (label?.avatar) $('child-face').textContent = label.avatar;
-        if (label?.name) $('child-name').textContent = label.name;
-        show('screen-child');
-      } else show('screen-parent');
+      try {
+        const user = await initAuth();
+        if (user && currentUid()) { await afterLogin(); return; }
+        if (hasChildDevice()) {
+          const label = childDeviceLabel();
+          if (label?.avatar) $('child-face').textContent = label.avatar;
+          if (label?.name) $('child-name').textContent = label.name;
+          show('screen-child');
+        } else show('screen-parent');
+      } catch (e) {
+        // Никогда не оставляем белый экран: показываем вход и сообщение об ошибке.
+        console.error('Старт / afterLogin:', e);
+        show(hasChildDevice() ? 'screen-child' : 'screen-parent');
+        toast(friendlyError(e));
+      }
     })();
   </script>
   <script src="pwa.js"></script>
