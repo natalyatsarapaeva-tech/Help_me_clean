@@ -1,9 +1,8 @@
 // Единая инициализация Firebase для «Наведи и убери» (перенос Twin js/firebase.js).
-// Отдельный Firebase-проект (Auth + Firestore + Storage). Конфиг публичный по
-// дизайну — доступ гейтят Firestore/Storage rules.
-//
-// ⚠️ ЗАПОЛНИТЬ: вставь web-конфиг своего Firebase-проекта (Console → Project
-// settings → General → Your apps → Web). См. SETUP.md.
+// Отдельный Firebase-проект help-me-clean-7969f (Auth + Firestore + Storage).
+// Конфиг публичный по дизайну — доступ гейтят Firestore/Storage rules.
+// Замена конфига — Console → Project settings → General → Your apps → Web.
+// См. SETUP.md.
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 import {
@@ -26,12 +25,12 @@ export {
 } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-storage.js";
 
 const firebaseConfig = {
-  apiKey: "REPLACE_ME",
-  authDomain: "REPLACE_ME.firebaseapp.com",
-  projectId: "REPLACE_ME",
-  storageBucket: "REPLACE_ME.firebasestorage.app",
-  messagingSenderId: "REPLACE_ME",
-  appId: "REPLACE_ME",
+  apiKey: "AIzaSyDnFf016bxLlOY4M1hefsKcouLuZzvLx8Y",
+  authDomain: "help-me-clean-7969f.firebaseapp.com",
+  projectId: "help-me-clean-7969f",
+  storageBucket: "help-me-clean-7969f.firebasestorage.app",
+  messagingSenderId: "1050095126739",
+  appId: "1:1050095126739:web:c39b05ca0bb971157dec26",
 };
 
 const app = initializeApp(firebaseConfig);
