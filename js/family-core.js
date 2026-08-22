@@ -176,6 +176,7 @@ export function emptyRewards() {
     cardsByTheme: Object.fromEntries(THEME_IDS.map(t => [t, []])),
     realRewards: [],   // покупки реальных наград, см. js/shop-core.js
     dailyRooms: { day: null, rooms: {}, places: {} }, // дневной лимит, см. js/limits-core.js
+    dailyBonus: { day: null, ids: {}, total: 0 },      // бонусные задания, см. js/bonus-core.js
     lastSurpriseAt: null,
   };
 }
@@ -223,6 +224,7 @@ export function normalizeRewards(raw) {
     cardsByTheme: byTheme,
     realRewards: Array.isArray(r.realRewards) ? r.realRewards : [],
     dailyRooms: normalizeDailyRooms(r.dailyRooms),
+    dailyBonus: normalizeDailyBonus(r.dailyBonus),
     lastSurpriseAt: r.lastSurpriseAt || null,
   };
 }
@@ -336,6 +338,37 @@ export function cleanPlace(raw) {
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 40);
+}
+
+// Счётчик бонусных заданий за сегодня (js/bonus-core.js): какие сделаны и сколько.
+function normalizeDailyBonus(raw) {
+  const b = (raw && typeof raw === 'object') ? raw : {};
+  const ids = {};
+  if (b.ids && typeof b.ids === 'object') {
+    for (const [k, v] of Object.entries(b.ids)) {
+      const n = Number(v);
+      if (Number.isFinite(n) && n > 0) ids[k] = Math.floor(n);
+    }
+  }
+  return {
+    day: typeof b.day === 'string' ? b.day : null,
+    ids,
+    total: Math.max(0, Math.floor(Number(b.total) || 0)),
+  };
+}
+
+// Санитайзинг ответа проверки БОНУСА. Тут, в отличие от /verify, человек в кадре
+// — это норма: ребёнок именно и показывает, что он делает. Поэтому person_detected
+// не проверяем, а спрашиваем только «видно ли то, о чём просили».
+export function sanitizeBonus(raw) {
+  const r = (raw && typeof raw === 'object') ? raw : {};
+  const done = r.done === true;
+  return {
+    done,
+    praise: String(r.praise || '').trim(),
+    // Подсказка нужна только когда не засчитали: что именно доснять.
+    hint: done ? '' : String(r.hint || '').trim(),
+  };
 }
 
 // Санитайзинг ответа /verify (§292): мягкая оценка, статусы done/retake.

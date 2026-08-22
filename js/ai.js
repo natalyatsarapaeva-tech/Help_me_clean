@@ -7,7 +7,7 @@
 // Санитайзеры (sanitizeScan/Verify/Home) — в family-core.js (чистые, тестируемые).
 import {
   ACTION_CATEGORIES, ROOM_TYPES, roomTypeLabel, TIDY_STANDARD_TEXT,
-  sanitizeScan, sanitizeVerify, sanitizeHome, parseJsonObject,
+  sanitizeScan, sanitizeVerify, sanitizeBonus, sanitizeHome, parseJsonObject,
 } from './family-core.js';
 
 // Тот же воркер, что у twin (task-intake-worker). Endpoint /ai — прокси OpenAI.
@@ -175,6 +175,38 @@ export async function verify({ imageBefore, imageAfter, task, referenceUrl }) {
       messages: [{ role: 'system', content: verifySystem }, { role: 'user', content }] },
     sanitizeVerify,
     () => false, // любой разобранный ответ приемлем; повтор не нужен
+  );
+}
+
+// ── Бонусное задание: ребёнок показывает САМО действие ──────────────────────
+// Здесь всё наоборот по сравнению с /verify: человек в кадре — не ошибка, а суть
+// снимка. Проверяем ровно одно — видно ли то, о чём просили. Сомневаешься —
+// засчитывай: цена ложного «нет» (ребёнок реально вытер пыль, а ему не поверили)
+// намного выше цены ложного «да».
+const bonusSystem = (task) => `Ты добрый помощник в детском приложении про уборку. Ребёнок выполнил дополнительное задание и прислал фото-доказательство. Верни ТОЛЬКО JSON:
+{"done":true,"praise":"Пыли как не бывало!","hint":""}
+
+Задание было: «${task.title}» — ${task.hint}
+На фото должно быть видно: ${task.check}
+
+Правила:
+- Ребёнок, его рука, лицо в кадре — ЭТО НОРМАЛЬНО и ожидаемо. Не считай это ошибкой.
+- done:true, если на фото видно то, о чём просили, хотя бы в общих чертах.
+- Сомневаешься — ставь done:true. Ребёнок 7 лет снимает как умеет.
+- done:false только если на фото очевидно НЕ то задание (например, просили тряпку
+  на столе, а прислали фото кота). Тогда в hint — одна короткая добрая подсказка,
+  что доснять.
+- praise — короткая живая похвала по-русски, про то, что стало чище. Без критики.`;
+
+export async function checkBonus(base64, task) {
+  return jsonCall(
+    { model: MODEL, max_tokens: 300, temperature: 0.2,
+      messages: [
+        { role: 'system', content: bonusSystem(task) },
+        { role: 'user', content: [dataUrl(base64), { type: 'text', text: 'Вот фото. Засчитай задание по правилам и верни JSON.' }] },
+      ] },
+    sanitizeBonus,
+    () => false, // любой разобранный ответ приемлем
   );
 }
 

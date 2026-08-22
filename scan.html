@@ -200,7 +200,7 @@
       <div class="praise" id="done-praise">Готово!</div>
       <div class="card col">
         <div class="row" style="gap:24px">
-          <div><div class="counter" id="done-sparkles">0</div><div class="muted" id="done-currency">искорок</div></div>
+          <div><div class="counter" id="done-sparkles">0</div><div class="muted" id="done-currency">за эту уборку</div></div>
           <div><div class="counter" id="done-time">0:00</div><div class="muted">на уборку</div></div>
           <div><div class="counter" id="done-items">0</div><div class="muted">убрано вещей</div></div>
         </div>
@@ -220,10 +220,46 @@
           </div>
         </div>
       </div>
+      <!-- Бонус: камера не видит РАБОТУ (вытертую пыль, политый цветок), зато
+           ребёнок может её показать. Предлагаем только после награждённой уборки. -->
+      <div class="card col hidden" id="bonus-offer" style="border:3px dashed var(--accent)">
+        <div class="row">
+          <span class="task-color" id="bonus-emoji" style="--c:var(--accent)">🧽</span>
+          <div class="col" style="gap:2px">
+            <div class="task-text" id="bonus-title">—</div>
+            <div class="muted" id="bonus-hint">—</div>
+          </div>
+        </div>
+        <div class="row">
+          <button class="btn btn-primary" id="btn-bonus-go">Сделаю! <span id="bonus-price"></span></button>
+          <button class="btn btn-ghost" id="btn-bonus-skip">Не сейчас</button>
+        </div>
+      </div>
+
       <div class="row">
         <button class="btn btn-primary btn-big" id="btn-again" style="max-width:340px">Ещё одно место</button>
         <a class="btn btn-ghost" href="index.html">Домой</a>
       </div>
+    </section>
+
+    <!-- Съёмка бонуса: тут человек в кадре — не ошибка, а смысл снимка. -->
+    <section id="step-bonus" class="step col">
+      <h1 id="bonus-shot-title">Покажи, как ты это делаешь</h1>
+      <p class="muted" id="bonus-shot-hint">—</p>
+      <div class="stage">
+        <div class="frame">
+          <video id="video3" playsinline muted></video>
+          <div class="hint-over">Себя и свои руки снимать МОЖНО — так и надо</div>
+          <button class="shutter" id="btn-shot3" aria-label="Снять"></button>
+        </div>
+      </div>
+      <div class="row" id="cam-fallback3" style="display:none">
+        <label class="btn btn-primary btn-big" style="max-width:340px">
+          📷 Сделать фото
+          <input id="file-input3" type="file" accept="image/*" capture="environment" hidden>
+        </label>
+      </div>
+      <button class="btn btn-ghost" id="btn-bonus-cancel" style="max-width:240px">← Не сейчас</button>
     </section>
 
     <div id="toast" class="toast"></div>
@@ -239,11 +275,12 @@
       awardRound, isPlaceExhausted, isRoomExhausted, placeCount, roomCount,
       PLACE_DAILY_LIMIT, ROOM_DAILY_LIMIT,
     } from './js/limits-core.js';
-    import { scan, verify, reward } from './js/ai.js';
+    import { scan, verify, reward, checkBonus } from './js/ai.js';
     import { startCamera, stopCamera, cameraErrorText } from './js/camera.js';
     import { prepareScanFrame, revokeFrame } from './js/image.js';
     import { theme, roomsInOrder, reconcileRouteOrder, FALLBACK_THEME, addCard, cardsForTheme } from './js/family-core.js';
     import { pickCard } from './js/cards-core.js';
+    import { pickBonus, awardBonus, bonusesLeftToday } from './js/bonus-core.js';
     import {
       buildRound, stepTask, stepItems, isItemDone, toggleItem, completeStep, skipStep,
       isFinished, roundProgress, roundTaskText, finishRound, elapsedMs, formatDuration,
@@ -252,7 +289,7 @@
 
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-    const STEPS = ['step-room', 'step-mode', 'step-camera', 'step-thinking', 'step-round', 'step-after', 'step-done'];
+    const STEPS = ['step-room', 'step-mode', 'step-camera', 'step-thinking', 'step-round', 'step-after', 'step-done', 'step-bonus'];
     const show = id => STEPS.forEach(s => $(s).classList.toggle('on', s === id));
     let toastTimer;
     const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); };
@@ -262,6 +299,7 @@
     // Награды держим при себе: из них считается дневной лимит по комнатам,
     // и его надо показать ДО уборки, а не «сюрпризом» в конце.
     let myRewards = null;
+    let bonus = null; // предложенное бонусное задание
     let th = theme(sessionStorage.getItem('tidy.todayTheme') || FALLBACK_THEME);
     let rooms = [], room = null;
     // Режим A (стол крупным планом) или B (обход комнаты) — выбирает ребёнок.
@@ -497,7 +535,7 @@
       $('done-praise').textContent = verifyResult?.praise || th.praiseWord;
       $('done-sparkles').textContent = round.sparkles;
       $('limit-note').classList.add('hidden');
-      $('done-currency').textContent = th.currencyName;
+      $('done-currency').textContent = `${th.currencyEmoji} за эту уборку`;
       $('done-time').textContent = formatDuration(elapsedMs(round));
       $('done-items').textContent = p.itemsDone;
       $('done-extra').textContent = '';
@@ -532,6 +570,7 @@
           $('limit-note').classList.remove('hidden');
         }
         $('done-extra').textContent = `Всего у тебя: ${th.currencyEmoji} ${next.currency} · заработано за всё время: ${next.earnedTotal} · уборок: ${next.cleanupsTotal}`;
+        offerBonus(award.awarded);
       } catch (e) {
         console.error('save:', e);
         $('done-extra').textContent = 'Искорки засчитаны, но записать не вышло — проверь связь.';
@@ -548,6 +587,68 @@
       box.classList.remove('hidden');
       say(`Новая карточка: ${card.name || ''}`);
     }
+
+    // ── Бонусные задания ──
+    // Предлагаем только после уборки, за которую начислили: иначе «сфоткай руку»
+    // стало бы способом получать искорки вместо уборки.
+    function offerBonus(awarded) {
+      bonus = awarded ? pickBonus(myRewards, room?.type, { rand: Math.random }) : null;
+      $('bonus-offer').classList.toggle('hidden', !bonus);
+      if (!bonus) return;
+      $('bonus-emoji').textContent = bonus.emoji;
+      $('bonus-title').textContent = bonus.title;
+      $('bonus-hint').textContent = bonus.hint;
+      $('bonus-price').textContent = `+${bonus.sparkles} ${th.currencyEmoji}`;
+    }
+    async function goBonusCamera() {
+      if (!bonus) return;
+      $('bonus-shot-title').textContent = `${bonus.emoji} ${bonus.title}`;
+      $('bonus-shot-hint').textContent = bonus.hint;
+      show('step-bonus');
+      say(bonus.hint);
+      await openCamera($('video3'), $('cam-fallback3'));
+    }
+    async function shootBonus(source) {
+      const frame = await grabFrame(source);
+      if (!frame) { toast('Темновато — включи свет и сними ещё раз'); return; }
+      stopCamera();
+      show('step-thinking');
+      $('thinking-text').textContent = 'Смотрю, что получилось…';
+      let result;
+      try {
+        result = await checkBonus(frame.base64, bonus);
+      } catch (e) {
+        console.warn('bonus:', e);
+        // Сеть подвела — не наказываем: ребёнок работу сделал.
+        result = { done: true, praise: 'Отлично!', hint: '' };
+      } finally { revokeFrame(frame); }
+
+      if (!result.done) {
+        toast(result.hint || 'Не видно того, о чём просили — попробуй ещё раз');
+        await goBonusCamera();
+        return;
+      }
+      const res = awardBonus(myRewards, bonus);
+      show('step-done');
+      if (!res.awarded) { toast('Это задание сегодня уже засчитано'); $('bonus-offer').classList.add('hidden'); return; }
+      myRewards = res.rewards;
+      $('bonus-offer').classList.add('hidden');
+      $('done-praise').textContent = result.praise || `+${res.sparkles} ${th.currencyName}!`;
+      $('done-sparkles').textContent = String(Number($('done-sparkles').textContent || 0) + res.sparkles);
+      $('sparkles').textContent = `${th.currencyEmoji} ${Number(round.sparkles) + res.sparkles}`;
+      say(result.praise || 'Засчитано!');
+      try {
+        await saveRewards(fid, profileId, myRewards);
+        $('done-extra').textContent = `Всего у тебя: ${th.currencyEmoji} ${myRewards.currency} · заработано за всё время: ${myRewards.earnedTotal} · уборок: ${myRewards.cleanupsTotal}`;
+        // Второй бонус за день, если он ещё положен.
+        offerBonus(bonusesLeftToday(myRewards) > 0);
+      } catch (e) { console.error('save bonus:', e); toast('Искорки засчитаны, но записать не вышло'); }
+    }
+    $('btn-bonus-go').onclick = goBonusCamera;
+    $('btn-bonus-skip').onclick = () => { bonus = null; $('bonus-offer').classList.add('hidden'); };
+    $('btn-bonus-cancel').onclick = () => { stopCamera(); show('step-done'); };
+    $('btn-shot3').onclick = () => shootBonus($('video3'));
+    $('file-input3').onchange = e => { const f = e.target.files?.[0]; if (f) shootBonus(f); e.target.value = ''; };
 
     // ── Переходы ──
     async function goCamera() {
@@ -614,6 +715,7 @@
       round = null; stopTimer(); $('timer').textContent = '0:00';
       $('estimate').classList.add('hidden');
       $('card-win').classList.add('hidden');
+      $('bonus-offer').classList.add('hidden'); bonus = null;
       if (rooms.length > 1) { renderRooms(); show('step-room'); renderHeader(); } else goMode();
     };
     $('btn-exit').onclick = () => { stopCamera(); stopTimer(); setBusy(false); };
