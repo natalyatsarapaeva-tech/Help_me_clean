@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Дети — Наведи и убери</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#3A5DA8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .back { text-decoration: none; color: var(--muted); font-weight: 800; }
+    .kid { display: flex; align-items: center; gap: 12px; }
+    .kid .face { font-size: 34px; }
+    .kid .grow { flex: 1; }
+    .form-grid { display: grid; grid-template-columns: 80px 1fr; gap: 12px; align-items: center; }
+    .form-grid .emoji { text-align: center; font-size: 26px; }
+    .secret { font-family: ui-monospace, monospace; background: var(--bg); border: 1px dashed var(--line); border-radius: 12px; padding: 10px 12px; word-break: break-all; }
+    details summary { cursor: pointer; font-weight: 800; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap col">
+    <a class="back" href="index.html">← Назад</a>
+    <h1>Дети</h1>
+
+    <div class="card col">
+      <strong>Профили</strong>
+      <div id="kids" class="col muted">Загрузка…</div>
+    </div>
+
+    <!-- Создание нового ребёнка. -->
+    <section id="add" class="card col">
+      <strong>Добавить ребёнка</strong>
+      <div class="form-grid">
+        <input id="f-avatar" class="field emoji" value="🟡" maxlength="2" title="Аватар">
+        <input id="f-name" class="field" placeholder="Имя (напр. Майя)">
+        <span class="muted">Тема</span>
+        <select id="f-theme" class="field">
+          <option value="minion">🟡 Миньон (младший)</option>
+          <option value="jedi">🔵 Джедай (старший)</option>
+        </select>
+        <span class="muted">PIN</span>
+        <input id="f-pin" class="field pin" inputmode="numeric" maxlength="4" placeholder="4 цифры">
+      </div>
+      <p class="muted" style="font-size:14px">Ребёнок не знает email и пароль — только этот PIN. Он работает на планшете, где ты нажмёшь «Настроить этот планшет». Пароль показывается один раз.</p>
+      <button id="btn-create" class="btn btn-primary">Создать профиль</button>
+    </section>
+
+    <!-- Результат создания: провижин планшета + одноразовые данные. -->
+    <section id="created" class="card col hidden">
+      <strong id="created-title">Профиль создан</strong>
+      <p class="muted">Дальше настрой планшет ребёнка. Обычно проще всего сделать это прямо на его планшете:</p>
+      <button id="btn-provision" class="btn btn-primary">📱 Настроить ЭТОТ планшет для ребёнка</button>
+      <div id="provision-done" class="hidden col">
+        <p>Готово — планшет запомнил вход по PIN. Теперь выйди из родителя и передай планшет ребёнку.</p>
+        <button id="btn-signout-handover" class="btn btn-ghost">Выйти из родителя → передать планшет</button>
+      </div>
+      <details>
+        <summary>Данные для другого планшета (показываются один раз)</summary>
+        <div class="col" style="margin-top:10px">
+          <p class="muted" style="font-size:14px">Если планшет ребёнка — другое устройство, открой на нём это приложение, войди как родитель, зайди в «Дети» и настрой планшет с этими данными и PIN. Пароль больше не показать — сохрани сейчас.</p>
+          <div>Email: <span id="cred-email" class="secret"></span></div>
+          <div>Пароль: <span id="cred-pass" class="secret"></span></div>
+          <button id="btn-copy-cred" class="btn btn-ghost">Скопировать</button>
+        </div>
+      </details>
+      <button id="btn-add-more" class="btn btn-ghost">← Добавить ещё ребёнка</button>
+    </section>
+
+    <div id="toast" class="toast"></div>
+  </div>
+
+  <script type="module">
+    import {
+      initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
+      listProfiles, createChildAccount, setProfileTheme,
+      provisionChildOnThisDevice, signOutUser,
+    } from './js/store.js';
+    import { theme, THEME_IDS } from './js/family-core.js';
+
+    const $ = id => document.getElementById(id);
+    let toastTimer;
+    const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); };
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+    let fid = null;
+    let lastCreated = null; // { name, email, password, pin }
+
+    async function renderKids() {
+      const kids = await listProfiles(fid);
+      if (!kids.length) { $('kids').innerHTML = 'Пока никого. Добавь первого ниже.'; return; }
+      $('kids').innerHTML = kids.map(k => `
+        <div class="kid" data-uid="${esc(k.id)}">
+          <span class="face">${esc(k.avatar || theme(k.theme).currencyEmoji)}</span>
+          <span class="grow"><strong>${esc(k.name || 'Ребёнок')}</strong></span>
+          <select class="field k-theme" style="max-width:190px">
+            ${THEME_IDS.map(t => `<option value="${t}" ${t === k.theme ? 'selected' : ''}>${esc(theme(t).label)}</option>`).join('')}
+          </select>
+        </div>`).join('');
+      $('kids').querySelectorAll('.kid').forEach(row => {
+        row.querySelector('.k-theme').onchange = async e => {
+          try { await setProfileTheme(fid, row.dataset.uid, e.target.value); toast('Тема сохранена'); }
+          catch { toast('Не удалось сохранить'); }
+        };
+      });
+    }
+
+    // Аватар по умолчанию подстраивается под тему, если родитель не менял вручную.
+    let avatarTouched = false;
+    $('f-avatar').oninput = () => { avatarTouched = true; };
+    $('f-theme').onchange = () => { if (!avatarTouched) $('f-avatar').value = $('f-theme').value === 'jedi' ? '🔵' : '🟡'; };
+
+    $('btn-create').onclick = async () => {
+      const name = $('f-name').value.trim();
+      const themeId = $('f-theme').value;
+      const avatar = $('f-avatar').value.trim() || theme(themeId).currencyEmoji;
+      const pin = $('f-pin').value.trim();
+      if (!name) { toast('Введи имя'); return; }
+      if (!/^\d{4}$/.test(pin)) { toast('PIN — ровно 4 цифры'); return; }
+      $('btn-create').disabled = true;
+      try {
+        const { email, password } = await createChildAccount(fid, { name, theme: themeId, avatar });
+        lastCreated = { name, avatar, email, password, pin };
+        $('created-title').textContent = `Профиль «${name}» создан`;
+        $('cred-email').textContent = email;
+        $('cred-pass').textContent = password;
+        $('provision-done').classList.add('hidden');
+        $('btn-provision').classList.remove('hidden');
+        $('add').classList.add('hidden'); $('created').classList.remove('hidden');
+        await renderKids();
+      } catch (e) {
+        console.error(e);
+        toast(e?.code === 'auth/email-already-in-use' ? 'Попробуй ещё раз (email занят)' : 'Не удалось создать профиль');
+      } finally { $('btn-create').disabled = false; }
+    };
+
+    $('btn-provision').onclick = async () => {
+      if (!lastCreated) return;
+      try {
+        await provisionChildOnThisDevice(lastCreated.pin, lastCreated.email, lastCreated.password, { name: lastCreated.name, avatar: lastCreated.avatar });
+        $('btn-provision').classList.add('hidden');
+        $('provision-done').classList.remove('hidden');
+        toast('Планшет настроен');
+      } catch (e) { console.error(e); toast('Не удалось настроить планшет'); }
+    };
+    $('btn-signout-handover').onclick = async () => { await signOutUser(); location.href = 'index.html'; };
+    $('btn-copy-cred').onclick = async () => {
+      if (!lastCreated) return;
+      try { await navigator.clipboard.writeText(`email: ${lastCreated.email}\nпароль: ${lastCreated.password}`); toast('Скопировано'); }
+      catch { toast('Не удалось скопировать'); }
+    };
+    $('btn-add-more').onclick = () => {
+      lastCreated = null; avatarTouched = false;
+      $('f-name').value = ''; $('f-pin').value = ''; $('f-avatar').value = $('f-theme').value === 'jedi' ? '🔵' : '🟡';
+      $('created').classList.add('hidden'); $('add').classList.remove('hidden');
+    };
+
+    // ── Старт: только родитель ──
+    (async () => {
+      const user = await initAuth();
+      if (!user || !currentUid()) { location.href = 'index.html'; return; }
+      const families = await listMyFamilies();
+      fid = resolveActiveFamily(families) || getActiveFamilyId();
+      const mine = families.find(f => f.id === fid);
+      if (mine?.role !== 'parent') { toast('Только для родителя'); setTimeout(() => location.href = 'index.html', 800); return; }
+      await renderKids();
+    })();
+  </script>
+  <script src="pwa.js"></script>
+</body>
+</html>

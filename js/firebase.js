@@ -4,10 +4,10 @@
 //
 // ⚠️ ЗАПОЛНИТЬ: вставь web-конфиг своего Firebase-проекта (Console → Project
 // settings → General → Your apps → Web). См. SETUP.md.
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
+import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-app.js";
 import { getFirestore } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-firestore.js";
 import {
-  getAuth, onAuthStateChanged, setPersistence, browserLocalPersistence,
+  getAuth, onAuthStateChanged, setPersistence, browserLocalPersistence, inMemoryPersistence,
 } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-auth.js";
 import { getStorage } from "https://www.gstatic.com/firebasejs/12.12.0/firebase-storage.js";
 
@@ -43,6 +43,17 @@ export const storage = getStorage(app);
 // видит экран входа. browserLocalPersistence переживает перезапуск браузера/PWA.
 export const persistenceReady = setPersistence(auth, browserLocalPersistence)
   .catch(e => console.warn('setPersistence:', e?.code || e));
+
+// Вторичный Firebase-app для создания детского аккаунта родителем: держит свою
+// (in-memory, не переживает перезагрузку) сессию, чтобы создание нового
+// пользователя НЕ перелогинивало родителя в основном инстансе. Одноразовый —
+// после работы вызвать destroy().
+export async function createSecondaryAuth() {
+  const secApp = initializeApp(firebaseConfig, 'secondary-' + Date.now());
+  const secAuth = getAuth(secApp);
+  await setPersistence(secAuth, inMemoryPersistence).catch(() => {});
+  return { auth: secAuth, destroy: () => deleteApp(secApp).catch(() => {}) };
+}
 
 // Разрешается после восстановления сессии — страницы, пишущие в Firestore/Storage,
 // ждут, чтобы запросы ушли с токеном (важно для rules по членству).

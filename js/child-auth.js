@@ -9,7 +9,8 @@
 // Провиженит устройство родитель (§141): вводит email/пароль детского аккаунта
 // (или создаёт его) и задаёт PIN, дальше планшет логинится сам по PIN.
 
-const CRED_KEY = 'tidy.childCred'; // { email, salt, iv, ct } в localStorage
+const CRED_KEY = 'tidy.childCred';   // { email, salt, iv, ct } — секрет под PIN
+const LABEL_KEY = 'tidy.childLabel'; // { name, avatar } — несекретно, для экрана PIN
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
@@ -27,7 +28,8 @@ async function keyFromPin(pin, salt) {
 }
 
 // Сохранить учётку ребёнка на устройстве под PIN. Вызывает родитель.
-export async function provisionChildDevice(pin, email, password) {
+// label = { name, avatar } — несекретная подпись для экрана входа ребёнка.
+export async function provisionChildDevice(pin, email, password, label = {}) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await keyFromPin(pin, salt);
@@ -36,10 +38,18 @@ export async function provisionChildDevice(pin, email, password) {
     email: String(email),
     salt: b64.to(salt), iv: b64.to(iv), ct: b64.to(ct),
   }));
+  localStorage.setItem(LABEL_KEY, JSON.stringify({
+    name: String(label.name || ''), avatar: String(label.avatar || ''),
+  }));
 }
 
 // Есть ли на устройстве сохранённая детская учётка (показывать экран PIN, а не email).
 export function hasChildDevice() { return !!localStorage.getItem(CRED_KEY); }
+
+// Несекретная подпись (имя/аватар) для экрана PIN. null, если планшет не провижен.
+export function childDeviceLabel() {
+  try { return JSON.parse(localStorage.getItem(LABEL_KEY)) || null; } catch { return null; }
+}
 
 // Расшифровать email/пароль по PIN. Бросает, если PIN неверный (GCM не сойдётся).
 export async function unlockChildCredentials(pin) {
@@ -57,4 +67,4 @@ export async function unlockChildCredentials(pin) {
 }
 
 // Сбросить устройство (родитель разлогинивает планшет).
-export function clearChildDevice() { localStorage.removeItem(CRED_KEY); }
+export function clearChildDevice() { localStorage.removeItem(CRED_KEY); localStorage.removeItem(LABEL_KEY); }

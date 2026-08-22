@@ -32,6 +32,8 @@ LLM с vision через Cloudflare Worker `/tidy/*`.
 | Файл | Назначение |
 |---|---|
 | `index.html` | Вход (родитель email / ребёнок аватар+PIN), панель семьи, код, профили |
+| `home.html` | Онбординг дома: текст → карта комнат (правка) → маршрут обхода (родитель) |
+| `children.html` | Создание детских профилей + провижин планшета по PIN (родитель) |
 | `js/firebase.js` | Инициализация Firebase (Auth+Firestore+Storage, `browserLocalPersistence`) |
 | `js/family-core.js` | **Чистое ядро:** роли, коды, id, активная семья, цветовой словарь действий, типы комнат, темы minion/jedi, награды, разбор ответов LLM |
 | `js/child-auth.js` | Детский вход по PIN (WebCrypto: PIN → ключ → расшифровка пароля) |

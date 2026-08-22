@@ -18,7 +18,7 @@
     <section id="screen-child" class="hidden col">
       <h1>Привет! Кто ты?</h1>
       <div class="avatars" id="child-avatars">
-        <button class="avatar-btn" data-pin-target>🟡<span class="name">Миньон</span></button>
+        <button class="avatar-btn" data-pin-target><span id="child-face">🟡</span><span class="name" id="child-name">Я</span></button>
       </div>
       <div id="pin-box" class="card col hidden" style="max-width:360px">
         <div class="muted">Введи свой код</div>
@@ -72,7 +72,7 @@
   <script type="module">
     import {
       initAuth, signInEmail, registerEmail, signInGoogle, signInChildWithPin, signOutUser,
-      hasChildDevice, currentUid, listMyFamilies, ensureFirstFamily, getFamily,
+      hasChildDevice, childDeviceLabel, currentUid, listMyFamilies, ensureFirstFamily, getFamily,
       resolveActiveFamily, getActiveFamilyId, listProfiles,
     } from './js/store.js';
     import { theme } from './js/family-core.js';
@@ -152,7 +152,12 @@
     (async () => {
       const user = await initAuth();
       if (user && currentUid()) { await afterLogin(); return; }
-      if (hasChildDevice()) show('screen-child'); else show('screen-parent');
+      if (hasChildDevice()) {
+        const label = childDeviceLabel();
+        if (label?.avatar) $('child-face').textContent = label.avatar;
+        if (label?.name) $('child-name').textContent = label.name;
+        show('screen-child');
+      } else show('screen-parent');
     })();
   </script>
   <script src="pwa.js"></script>

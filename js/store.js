@@ -12,17 +12,17 @@ import {
   db, doc, getDoc, setDoc, collection, getDocs, query, where,
   auth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
   getRedirectResult, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
-  authReady,
+  authReady, createSecondaryAuth,
 } from './firebase.js';
 import {
   makeFamilyId, makeJoinCode, normalizeJoinCode, pickActiveFamily,
   PARENT, CHILD, DEFAULT_THEME,
 } from './family-core.js';
 import {
-  provisionChildDevice, hasChildDevice, unlockChildCredentials, clearChildDevice,
+  provisionChildDevice, hasChildDevice, unlockChildCredentials, clearChildDevice, childDeviceLabel,
 } from './child-auth.js';
 
-export { normalizeJoinCode, hasChildDevice };
+export { normalizeJoinCode, hasChildDevice, childDeviceLabel };
 
 const ACTIVE_KEY = 'tidy.activeFamilyId';
 
@@ -77,8 +77,9 @@ export async function signInChildWithPin(pin) {
   return signInEmail(email, password);
 }
 // Родитель настраивает детский планшет: сохраняет учётку под PIN на устройстве.
-export async function provisionChildOnThisDevice(pin, email, password) {
-  return provisionChildDevice(pin, email, password);
+// label = { name, avatar } — для экрана входа ребёнка (несекретно).
+export async function provisionChildOnThisDevice(pin, email, password, label = {}) {
+  return provisionChildDevice(pin, email, password, label);
 }
 export function forgetChildOnThisDevice() { clearChildDevice(); }
 
@@ -190,6 +191,35 @@ export async function saveProfile(fid, profile) {
 // Смена темы ребёнком (§49) — прогресс сохраняется, меняется оформление.
 export async function setProfileTheme(fid, profileId, theme) {
   await setDoc(doc(db, 'families', fid, 'profiles', profileId), { theme }, { merge: true });
+}
+
+// Служебный email/пароль детского аккаунта (§137). Email не подтверждается
+// Firebase, пароль ребёнку неизвестен (§455) — он знает только PIN.
+function childEmail(name) {
+  const slug = String(name || 'kid').toLowerCase().replace(/[^a-z0-9]/gi, '') || 'kid';
+  return `${slug}-${Math.random().toString(36).slice(2, 8)}@tidy.local`;
+}
+function randomPassword() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(18)), b => b.toString(36)).join('').slice(0, 24);
+}
+
+// Родитель создаёт детский аккаунт: во ВТОРИЧНОМ Firebase-app (иначе создание
+// перелогинит родителя), затем из основного инстанса пишет профиль + членство
+// (правила это разрешают родителю). Возвращает { uid, email, password } —
+// пароль показывается один раз, дальше живёт только зашифрованным на планшете.
+export async function createChildAccount(fid, { name, theme, avatar }) {
+  const email = childEmail(name);
+  const password = randomPassword();
+  const { auth: secAuth, destroy } = await createSecondaryAuth();
+  try {
+    const cred = await createUserWithEmailAndPassword(secAuth, email, password);
+    const uid = cred.user.uid;
+    await signOut(secAuth);
+    await saveProfile(fid, { uid, name, theme, avatar });
+    return { uid, email, password };
+  } finally {
+    await destroy();
+  }
 }
 
 // ── Прогресс сессии уборки ───────────────────────────────────────────────────
