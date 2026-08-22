@@ -1,0 +1,16 @@
+// Firebase Storage rules — доступ к файлам по членству в семье (перенос Twin).
+// Хранятся ТОЛЬКО эталонные фото (§424): families/{fid}/reference/{surfaceId}.jpg.
+// Фото уборки в Storage НЕ уходят — живут на планшете (§420).
+//
+// ⚠️ Деплой: Firebase Console → Storage → Rules (или firebase deploy --only storage).
+// Правила Storage читают Firestore — оба набора правил должны быть задеплоены.
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /families/{fid}/{allPaths=**} {
+      allow read, write: if request.auth != null
+        && firestore.exists(/databases/(default)/documents/families/$(fid)/members/$(request.auth.uid));
+    }
+  }
+}

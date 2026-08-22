@@ -1,0 +1,230 @@
+// Чистое ядро «Наведи и убери» (без Firebase/DOM — тестируется в Node).
+// Портировано из Twin Things js/catalog-core.js: коды присоединения, роли,
+// идентификаторы, активный контейнер, разбор ответов LLM. Плюс доменные
+// константы приложения: цветовой словарь действий, типы комнат, темы, награды.
+//
+// Двухуровневая модель «пользователь → семья» (many-to-many, как каталог в Twin):
+//   users/{uid}/families/{fid}   — индекс «мои семьи» {role, name, joinedAt}
+//   families/{fid}/members/{uid} — источник прав {role: 'parent'|'child', addedBy, joinedAt}
+// Роли: parent (≈owner) | child (≈editor, но заперт в свой профиль profileId==uid).
+
+// ── Роли ────────────────────────────────────────────────────────────────────
+export const ROLES = ['parent', 'child'];
+export const PARENT = 'parent';
+export const CHILD = 'child';
+
+export function isValidRole(role) { return ROLES.includes(role); }
+// Управлять семьёй (дом, награды, эталоны, участники, joinCode) — только родитель.
+export function canManageFamily(role) { return role === PARENT; }
+// Ребёнок работает только со своим профилем; родитель — со всем.
+export function canAccessProfile(role, myProfileId, profileId) {
+  return role === PARENT || (role === CHILD && profileId === myProfileId);
+}
+
+// ── Коды присоединения (перенос из Twin household/catalog-core) ──────────────
+// 6 символов без визуально похожих (I/L/O/0/1). Код — для добавления ВЗРОСЛЫХ
+// устройств в семью; дети код не вводят (их провиженит родитель).
+const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+export function makeJoinCode(rand = Math.random) {
+  return Array.from({ length: 6 }, () => CODE_CHARS[Math.floor(rand() * CODE_CHARS.length)]).join('');
+}
+export function normalizeJoinCode(raw) {
+  return String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+export function isValidJoinCode(raw) {
+  return normalizeJoinCode(raw).length === 6;
+}
+
+// ── Идентификаторы ──────────────────────────────────────────────────────────
+export function makeFamilyId(name, rand = Math.random) {
+  const slug = String(name || 'family').toLowerCase()
+    .replace(/[^a-z0-9]/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'family';
+  return `${slug}-${Math.floor(rand() * 1e9).toString(36)}`;
+}
+export function makeSessionId(now = Date.now, rand = Math.random) {
+  return `sess-${now()}-${Math.floor(rand() * 1e6).toString(36)}`;
+}
+export function makeSurfaceId(roomId, surfaceName, rand = Math.random) {
+  const slug = String(surfaceName || 'surface').toLowerCase()
+    .replace(/[^a-z0-9]/gi, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'surface';
+  return `${roomId || 'room'}-${slug}-${Math.floor(rand() * 1e6).toString(36)}`;
+}
+
+// ── Активная семья (перенос pickActiveCatalog) ──────────────────────────────
+// У ребёнка семья одна; у родителя может быть несколько (свой дом + второй дом).
+export function pickActiveFamily(families, savedId) {
+  if (!Array.isArray(families) || families.length === 0) return null;
+  if (savedId && families.some(f => f.id === savedId)) return savedId;
+  return families[0].id;
+}
+
+// ── Типы комнат (закрытый список, §210 ТЗ) ──────────────────────────────────
+// К каждому типу подтягиваются заготовленные шаги и подсказки сканера.
+export const ROOM_TYPES = ['kitchen', 'bedroom_child', 'bathroom', 'living', 'hall', 'utility', 'other'];
+export function isValidRoomType(t) { return ROOM_TYPES.includes(t); }
+export function normalizeRoomType(t) { return ROOM_TYPES.includes(t) ? t : 'other'; }
+
+// ── Цветовой словарь действий (§232, фиксированный — модель НЕ выдумывает) ───
+// Единственное, что тема НЕ перекрашивает (§371). category — из закрытого списка.
+export const ACTION_CATEGORIES = [
+  { id: 'paper',            color: '#2F6BFF', emoji: '🔵', instruction: 'Собери все бумаги в одну стопку', target: 'На край стола' },
+  { id: 'stationery',       color: '#25A55A', emoji: '🟢', instruction: 'Поставь карандаши и ручки в стакан', target: 'Стакан' },
+  { id: 'trash',            color: '#8B5CF6', emoji: '🟣', instruction: 'Выброси мусор', target: 'Ведро' },
+  { id: 'dishes',           color: '#F0871E', emoji: '🟠', instruction: 'Отнеси посуду', target: 'Кухня' },
+  { id: 'clothes',          color: '#F5C518', emoji: '🟡', instruction: 'Одежду в корзину или в шкаф', target: 'Корзина' },
+  { id: 'toys',             color: '#F472B6', emoji: '🩷', instruction: 'Игрушки в свой ящик', target: 'Ящик' },
+  { id: 'belongs_elsewhere',color: '#9AA3AE', emoji: '⚪️', instruction: 'Это живёт в другой комнате', target: 'Корзина «чужое»' },
+];
+export const ACTION_IDS = ACTION_CATEGORIES.map(c => c.id);
+const ACTION_BY_ID = new Map(ACTION_CATEGORIES.map(c => [c.id, c]));
+export function actionCategory(id) { return ACTION_BY_ID.get(id) || null; }
+export function isValidActionCategory(id) { return ACTION_BY_ID.has(id); }
+
+// ── Темы (§43 ТЗ). Механика одна, различаются палитра/тексты/шаг/озвучка ────
+// Вынесены отдельно, чтобы подменить франшизные отсылки за час (§51).
+export const THEMES = {
+  minion: {
+    id: 'minion', label: 'Миньон',
+    currencyName: 'бананы', currencyEmoji: '🍌',
+    voice: 'loud', stepGranularity: 'fine', tts: true,
+    colors: { primary: '#FFD836', secondary: '#3A5DA8', bg: '#FFFFFF', ink: '#111111', accent: '#3A5DA8' },
+    praiseWord: 'Банана!',
+  },
+  jedi: {
+    id: 'jedi', label: 'Джедай',
+    currencyName: 'кристаллы', currencyEmoji: '💎',
+    voice: 'calm', stepGranularity: 'coarse', tts: false,
+    colors: { primary: '#12203F', secondary: '#4FC3F7', bg: '#0B1220', ink: '#E8EEF7', accent: '#5BE37D' },
+    praiseWord: 'Ты справился.',
+  },
+};
+export const THEME_IDS = Object.keys(THEMES);
+export const DEFAULT_THEME = 'minion';
+export function theme(id) { return THEMES[id] || THEMES[DEFAULT_THEME]; }
+export function isValidTheme(id) { return Object.prototype.hasOwnProperty.call(THEMES, id); }
+
+// Ранги Джедая (§37) — прогресс только растёт.
+export const JEDI_RANKS = ['Юнлинг', 'Падаван', 'Рыцарь', 'Мастер'];
+export function rankForCleanups(n) {
+  const c = Number(n) || 0;
+  if (c >= 60) return JEDI_RANKS[3];
+  if (c >= 25) return JEDI_RANKS[2];
+  if (c >= 8) return JEDI_RANKS[1];
+  return JEDI_RANKS[0];
+}
+
+// ── Награды (§317). Валюта начисляется только за ЗАКРЫТЫЕ шаги. ──────────────
+export const SPARKLES = { step: 1, room: 5, day: 15 };
+export function sparklesFor(kind) { return SPARKLES[kind] || 0; }
+
+// Переменное подкрепление (§330): сюрприз в среднем раз в 4 шага, разброс 2–7.
+// Чистая функция — источник случайности подаётся извне (детерминизм в тестах).
+export function nextSurpriseIn(rand = Math.random, min = 2, max = 7) {
+  return min + Math.floor(rand() * (max - min + 1));
+}
+export function shouldSurprise(stepsSinceLast, threshold) {
+  return Number(stepsSinceLast) >= Number(threshold);
+}
+
+// ── Разбор ответов LLM (перенос из Twin, §442: только JSON + повтор + санитайз)
+export function stripJsonFences(text) {
+  return String(text || '').trim()
+    .replace(/^```json\s*/i, '').replace(/^```\s*/, '').replace(/\s*```$/, '').trim();
+}
+export function parseJsonObject(content) {
+  const cleaned = stripJsonFences(content);
+  try { const v = JSON.parse(cleaned); if (v && typeof v === 'object' && !Array.isArray(v)) return v; } catch (_) {}
+  const s = cleaned.indexOf('{'), e = cleaned.lastIndexOf('}');
+  if (s !== -1 && e > s) { try { const v = JSON.parse(cleaned.slice(s, e + 1)); if (v && typeof v === 'object') return v; } catch (_) {} }
+  return {};
+}
+export function parseJsonArray(content) {
+  const cleaned = stripJsonFences(content);
+  try { const v = JSON.parse(cleaned); if (Array.isArray(v)) return v; } catch (_) {}
+  const s = cleaned.indexOf('['), e = cleaned.lastIndexOf(']');
+  if (s !== -1 && e > s) { try { const v = JSON.parse(cleaned.slice(s, e + 1)); if (Array.isArray(v)) return v; } catch (_) {} }
+  return [];
+}
+
+// Нормализованный box [x1,y1,x2,y2] (углы) → [x,y,w,h] 0..1 (перенос из Twin).
+export function cornersToXywh(box) {
+  if (!Array.isArray(box) || box.length !== 4) return null;
+  const n = box.map(Number);
+  if (!n.every(Number.isFinite)) return null;
+  const [x1, y1, x2, y2] = n;
+  return [Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1)];
+}
+
+// Санитайзинг ответа /scan (§246/§276): отбрасываем неизвестные категории и
+// кривые координаты, чтобы клиент рисовал только валидные подсветки.
+export function sanitizeScan(raw) {
+  const r = (raw && typeof raw === 'object') ? raw : {};
+  const mode = r.mode === 'overview' ? 'overview' : 'closeup';
+  if (mode === 'overview') {
+    const route = (Array.isArray(r.route) ? r.route : [])
+      .filter(s => s && isValidActionCategory(s.category) && Array.isArray(s.point) && s.point.length === 2)
+      .map((s, i) => ({
+        step: Number.isInteger(s.step) ? s.step : i + 1,
+        label: String(s.label || '').trim(),
+        point: s.point.map(Number),
+        action: String(s.action || '').trim(),
+        category: s.category,
+      }));
+    return { mode, route, estimated_minutes: Number(r.estimated_minutes) || null };
+  }
+  const items = (Array.isArray(r.items) ? r.items : [])
+    .filter(it => it && isValidActionCategory(it.category))
+    .map((it, i) => {
+      const box = Array.isArray(it.box) ? cornersToXywh(it.box)
+        : (Array.isArray(it.bbox) && it.bbox.length === 4 ? it.bbox.map(Number) : null);
+      return {
+        id: Number.isInteger(it.id) ? it.id : i + 1,
+        label: String(it.label || '').trim(),
+        category: it.category,
+        box,
+        confidence: Number(it.confidence) || null,
+      };
+    })
+    .filter(it => it.box);
+  // Группы-счётчики (§244): «работа по одному цвету за раз».
+  const groups = ACTION_IDS
+    .map(cat => ({ category: cat, count: items.filter(it => it.category === cat).length }))
+    .filter(g => g.count > 0)
+    .map(g => ({ ...g, instruction: actionCategory(g.category).instruction }));
+  return { mode, items, groups, surface_state: r.surface_state === 'clean' ? 'clean' : 'messy' };
+}
+
+// Санитайзинг ответа /verify (§292): мягкая оценка, статусы done/retake.
+export const VERIFY_SCORES = ['great', 'good', 'ok'];
+export function sanitizeVerify(raw) {
+  const r = (raw && typeof raw === 'object') ? raw : {};
+  if (r.person_detected === true) return { done: false, status: 'person', praise: '', missed: [] };
+  if (r.retake === true || r.status === 'retake') return { done: false, status: 'retake', praise: '', missed: [] };
+  return {
+    done: r.done === true,
+    status: r.done === true ? 'done' : 'incomplete',
+    score: VERIFY_SCORES.includes(r.score) ? r.score : 'ok',
+    praise: String(r.praise || '').trim(),
+    // §296: при done:false называть ОДНУ вещь, не список.
+    missed: Array.isArray(r.missed) ? r.missed.slice(0, 1).map(String) : [],
+  };
+}
+
+// Санитайзинг ответа /parse-home (§188): этажи → комнаты с валидным типом.
+export function sanitizeHome(raw) {
+  const r = (raw && typeof raw === 'object') ? raw : {};
+  const floors = (Array.isArray(r.floors) ? r.floors : []).map(fl => ({
+    name: String(fl?.name || '').trim(),
+    rooms: (Array.isArray(fl?.rooms) ? fl.rooms : []).map(rm => ({
+      id: String(rm?.id || makeSurfaceId('room', rm?.name || '')).trim(),
+      name: String(rm?.name || '').trim(),
+      type: normalizeRoomType(rm?.type),
+      icon: String(rm?.icon || '🏠'),
+      surfaces: Array.isArray(rm?.surfaces) ? rm.surfaces.map(String) : [],
+      typical_clutter: Array.isArray(rm?.typical_clutter) ? rm.typical_clutter.map(String) : [],
+      needs_confirmation: rm?.needs_confirmation === true,
+    })).filter(rm => rm.name),
+  })).filter(fl => fl.rooms.length);
+  return { floors };
+}

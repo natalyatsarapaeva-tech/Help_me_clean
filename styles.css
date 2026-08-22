@@ -1,0 +1,65 @@
+/* «Наведи и убери» — базовая дизайн-система на CSS-переменных.
+ * Тема = набор значений переменных (§42): подменяем --primary/--bg/… и получаем
+ * Миньона или Джедая, не трогая разметку. Семь цветов действий (§371) — отдельно,
+ * их тема НЕ перекрашивает. Крупные кнопки (§373), альбомная вёрстка (§72). */
+
+:root {
+  --primary: #FFD836; --secondary: #3A5DA8; --bg: #FFFFFF; --ink: #111111;
+  --accent: #3A5DA8; --muted: #6b7280; --card: #f4f6fb; --line: #e3e8f2;
+  --radius: 18px; --tap: 64px; --font: 'Nunito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+[data-theme="jedi"] {
+  --primary: #12203F; --secondary: #4FC3F7; --bg: #0B1220; --ink: #E8EEF7;
+  --accent: #5BE37D; --muted: #8aa0bd; --card: #12203F; --line: #223a63;
+}
+
+/* Семь цветов действий — фиксированы, вне темы (§232). */
+:root {
+  --act-paper: #2F6BFF; --act-stationery: #25A55A; --act-trash: #8B5CF6;
+  --act-dishes: #F0871E; --act-clothes: #F5C518; --act-toys: #F472B6;
+  --act-belongs_elsewhere: #9AA3AE;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: var(--font); background: var(--bg); color: var(--ink);
+  font-size: 18px; line-height: 1.35; -webkit-text-size-adjust: 100%;
+}
+.wrap { max-width: 960px; margin: 0 auto; padding: 20px; }
+.hidden { display: none !important; }
+
+h1 { font-size: 28px; margin: 0 0 4px; }
+.muted { color: var(--muted); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+
+.btn {
+  min-height: var(--tap); padding: 0 22px; border: none; border-radius: var(--radius);
+  font: inherit; font-weight: 800; cursor: pointer; background: var(--card); color: var(--ink);
+}
+.btn-primary { background: var(--primary); color: var(--secondary); }
+[data-theme="jedi"] .btn-primary { color: var(--ink); box-shadow: 0 0 0 2px var(--secondary) inset; }
+.btn-ghost { background: transparent; border: 2px solid var(--line); }
+.btn-google { background: #fff; color: #111; border: 2px solid #e3e8f2; }
+.row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.col { display: flex; flex-direction: column; gap: 12px; }
+
+.field {
+  width: 100%; min-height: var(--tap); padding: 0 16px; font: inherit;
+  border: 2px solid var(--line); border-radius: var(--radius); background: var(--bg); color: var(--ink);
+}
+.divider { text-align: center; color: var(--muted); margin: 14px 0; font-size: 14px; }
+
+.avatars { display: flex; gap: 20px; flex-wrap: wrap; }
+.avatar-btn {
+  width: 140px; height: 160px; border-radius: var(--radius); border: 3px solid var(--line);
+  background: var(--card); font-size: 64px; cursor: pointer; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 8px;
+}
+.avatar-btn .name { font-size: 20px; font-weight: 800; }
+.pin { letter-spacing: 12px; text-align: center; font-size: 32px; }
+
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-weight: 700; font-size: 14px; }
+.code { font-family: ui-monospace, monospace; font-size: 22px; letter-spacing: 4px; font-weight: 800; }
+.toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 12px 20px; border-radius: 999px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.on { opacity: 1; }

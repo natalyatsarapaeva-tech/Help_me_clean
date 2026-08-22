@@ -1,0 +1,10 @@
+{
+  "name": "help-me-clean",
+  "private": true,
+  "type": "module",
+  "description": "«Наведи и убери» — приложение, которое учит ребёнка убираться через камеру. Статика без сборки; package.json нужен только для тестов чистых модулей.",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "serve": "npx serve ."
+  }
+}

@@ -1,0 +1,65 @@
+// Firestore rules «Наведи и убери» — доступ = членство в семье.
+// Двухуровневая модель (перенос Twin Things + сужение ребёнка до своего профиля).
+// Роли: parent (всё в семье) | child (только свой профиль, profileId == uid).
+//
+// ⚠️ Пока правила не задеплоены, база в test mode (открыта всем).
+// Деплой: Firebase Console → Firestore Database → Rules
+//   (или firebase deploy --only firestore:rules).
+//
+// Join-по-коду делается в Worker (POST /tidy/join), НЕ на клиенте: не-член не
+// может прочитать семью по коду при закрытых правилах. См. docs/AUTH-*.md, п.3.1.
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+
+    // Профиль пользователя + индекс «мои семьи» (денормализация, прав не даёт).
+    match /users/{u} {
+      allow read, write: if signedIn() && u == uid();
+      match /families/{fid} {
+        allow read, write: if signedIn() && u == uid();
+      }
+    }
+
+    match /families/{fid} {
+      function isMember() {
+        return exists(/databases/$(database)/documents/families/$(fid)/members/$(uid()));
+      }
+      function role() {
+        return get(/databases/$(database)/documents/families/$(fid)/members/$(uid())).data.role;
+      }
+      function isParent() { return isMember() && role() == 'parent'; }
+
+      allow read:   if isMember();
+      allow create: if signedIn() && request.resource.data.ownerUid == uid();
+      allow update, delete: if isParent();
+
+      match /members/{m} {
+        allow read: if isMember();
+        // Первый родитель записывает себя (бутстрап); дальше — только родитель.
+        // Второго взрослого по коду добавляет Worker (Admin SDK), не клиент.
+        allow create: if signedIn()
+          && (m == uid() && request.resource.data.role == 'parent'
+              && get(/databases/$(database)/documents/families/$(fid)).data.ownerUid == uid())
+          || isParent();
+        allow update, delete: if isParent();
+      }
+
+      // Профиль ребёнка и ВСЁ под ним (progress, rewards):
+      //   parent — всё; child — только свой профиль (profileId == uid).  ← §164
+      match /profiles/{profileId}/{document=**} {
+        allow read, write: if isMember()
+          && (role() == 'parent' || profileId == uid());
+      }
+
+      // Общее на семью: члены читают, пишет только родитель.
+      match /home/{d}      { allow read: if isMember(); allow write: if isParent(); }
+      match /settings/{d}  { allow read: if isMember(); allow write: if isParent(); }
+      match /reference/{s} { allow read: if isMember(); allow write: if isParent(); }
+      match /cards/{c}     { allow read: if isMember(); allow write: if isParent(); }
+    }
+  }
+}

@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Наведи и убери</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#3A5DA8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="wrap">
+
+    <!-- Экран входа ребёнка: аватар + PIN (§137). Показывается, если планшет
+         уже провижен родителем. -->
+    <section id="screen-child" class="hidden col">
+      <h1>Привет! Кто ты?</h1>
+      <div class="avatars" id="child-avatars">
+        <button class="avatar-btn" data-pin-target>🟡<span class="name">Миньон</span></button>
+      </div>
+      <div id="pin-box" class="card col hidden" style="max-width:360px">
+        <div class="muted">Введи свой код</div>
+        <input id="pin-input" class="field pin" inputmode="numeric" maxlength="4" placeholder="••••">
+        <button id="pin-go" class="btn btn-primary">Войти</button>
+      </div>
+    </section>
+
+    <!-- Экран входа родителя: email/пароль или Google. -->
+    <section id="screen-parent" class="hidden col" style="max-width:420px">
+      <h1>Наведи и убери</h1>
+      <p class="muted">Вход для родителя</p>
+      <input id="email" class="field" type="email" placeholder="Email" autocomplete="username">
+      <input id="password" class="field" type="password" placeholder="Пароль" autocomplete="current-password">
+      <button id="btn-email" class="btn btn-primary">Войти</button>
+      <button id="btn-toggle" class="btn btn-ghost">Нет аккаунта? Зарегистрироваться</button>
+      <div class="divider">или</div>
+      <button id="btn-google" class="btn btn-google">Войти через Google</button>
+    </section>
+
+    <!-- Приложение после входа (заглушка панели родителя / онбординга). -->
+    <section id="screen-app" class="hidden col">
+      <div class="row" style="justify-content:space-between">
+        <h1 id="family-name">—</h1>
+        <button id="btn-signout" class="btn btn-ghost">Выйти</button>
+      </div>
+      <div class="row">
+        <span class="chip" id="role-chip">—</span>
+        <span class="chip">Код семьи: <span class="code" id="join-code">——————</span></span>
+        <button id="btn-copy-code" class="btn btn-ghost">Скопировать</button>
+      </div>
+
+      <div class="card col">
+        <strong>Профили детей</strong>
+        <div id="profiles" class="muted">Загрузка…</div>
+        <div class="muted" style="font-size:14px">
+          Каркас MVP. Дальше: онбординг дома текстом → карта комнат → эталонные фото →
+          режим камеры A → проверка → награды (см. docs/AUTH-i-pereispolzovanie.md и ТЗ).
+        </div>
+      </div>
+    </section>
+
+    <div id="toast" class="toast"></div>
+  </div>
+
+  <script type="module">
+    import {
+      initAuth, signInEmail, registerEmail, signInGoogle, signInChildWithPin, signOutUser,
+      hasChildDevice, currentUid, listMyFamilies, ensureFirstFamily, getFamily,
+      resolveActiveFamily, getActiveFamilyId, listProfiles,
+    } from './js/store.js';
+    import { theme } from './js/family-core.js';
+
+    const $ = id => document.getElementById(id);
+    const show = id => ['screen-child','screen-parent','screen-app'].forEach(s => $(s).classList.toggle('hidden', s !== id));
+    let toastTimer;
+    const toast = (msg) => { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2200); };
+
+    function friendlyError(e) {
+      const c = e?.code || '';
+      if (c.includes('wrong-password') || c.includes('invalid-credential')) return 'Неверный email или пароль';
+      if (c.includes('email-already-in-use')) return 'Такой email уже зарегистрирован';
+      if (c.includes('operation-not-allowed')) return 'Провайдер входа не включён в Firebase Auth';
+      if (e?.message === 'wrong-pin') return 'Неверный код, попробуй ещё раз';
+      return e?.message || 'Что-то пошло не так';
+    }
+
+    // ── Экран ребёнка ──
+    let pendingPinAvatar = false;
+    $('child-avatars').addEventListener('click', (e) => {
+      if (!e.target.closest('[data-pin-target]')) return;
+      pendingPinAvatar = true; $('pin-box').classList.remove('hidden'); $('pin-input').focus();
+    });
+    $('pin-go').onclick = async () => {
+      const pin = $('pin-input').value.trim();
+      if (pin.length !== 4) { toast('Код — 4 цифры'); return; }
+      try { await signInChildWithPin(pin); await afterLogin(); }
+      catch (e) { toast(friendlyError(e)); }
+    };
+
+    // ── Экран родителя ──
+    let mode = 'signin';
+    $('btn-toggle').onclick = () => {
+      mode = mode === 'signin' ? 'register' : 'signin';
+      $('btn-email').textContent = mode === 'signin' ? 'Войти' : 'Зарегистрироваться';
+      $('btn-toggle').textContent = mode === 'signin' ? 'Нет аккаунта? Зарегистрироваться' : 'Уже есть аккаунт? Войти';
+    };
+    $('btn-email').onclick = async () => {
+      const email = $('email').value.trim(), pass = $('password').value;
+      if (!email || !pass) { toast('Введи email и пароль'); return; }
+      try {
+        if (mode === 'signin') await signInEmail(email, pass); else await registerEmail(email, pass);
+        await afterLogin();
+      } catch (e) { toast(friendlyError(e)); }
+    };
+    $('btn-google').onclick = async () => {
+      try { const cred = await signInGoogle(); if (cred) await afterLogin(); }
+      catch (e) { toast(friendlyError(e)); }
+    };
+    $('btn-signout').onclick = async () => { await signOutUser(); location.reload(); };
+    $('btn-copy-code').onclick = async () => {
+      try { await navigator.clipboard.writeText($('join-code').textContent.trim()); toast('Код скопирован'); }
+      catch { toast('Не удалось скопировать'); }
+    };
+
+    // ── После входа: гарантируем семью, показываем панель ──
+    async function afterLogin() {
+      let families = await listMyFamilies();
+      if (!families.length) { await ensureFirstFamily(); families = await listMyFamilies(); }
+      const fid = resolveActiveFamily(families) || getActiveFamilyId();
+      const fam = await getFamily(fid);
+      $('family-name').textContent = fam?.name || 'Наш дом';
+      const mine = families.find(f => f.id === fid);
+      $('role-chip').textContent = mine?.role === 'parent' ? '👑 Родитель' : '🧒 Ребёнок';
+      $('join-code').textContent = fam?.joinCode || '——————';
+      const profiles = await listProfiles(fid);
+      $('profiles').textContent = profiles.length
+        ? profiles.map(p => `${theme(p.theme).currencyEmoji} ${p.name || p.id}`).join('   ')
+        : 'Пока нет — добавит родитель со своего телефона.';
+      show('screen-app');
+    }
+
+    // ── Старт ──
+    (async () => {
+      const user = await initAuth();
+      if (user && currentUid()) { await afterLogin(); return; }
+      if (hasChildDevice()) show('screen-child'); else show('screen-parent');
+    })();
+  </script>
+  <script src="pwa.js"></script>
+</body>
+</html>
