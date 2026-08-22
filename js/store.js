@@ -297,6 +297,40 @@ export async function deleteReference(fid, surfaceId) {
   await deleteDoc(doc(db, 'families', fid, 'reference', surfaceId));
 }
 
+// ── Карточки коллекции (§336) ────────────────────────────────────────────────
+// Каталог загружает РОДИТЕЛЬ (правила: /cards пишет только parent, читают все
+// члены). Ребёнок карточки не создаёт — он их добывает: id добытых лежат в его
+// наградах (cardsByTheme), а картинки берутся отсюда.
+export async function listCards(fid) {
+  const snap = await getDocs(collection(db, 'families', fid, 'cards'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+function cardPath(fid, cardId) { return `families/${fid}/cards/${cardId}.jpg`; }
+
+export async function saveCard(fid, cardId, blob, meta = {}) {
+  const path = cardPath(fid, cardId);
+  const fileRef = storageRef(storage, path);
+  await uploadBytes(fileRef, blob, { contentType: 'image/jpeg' });
+  const url = await getDownloadURL(fileRef);
+  const data = {
+    name: meta.name || '',
+    theme: meta.theme || 'any',
+    url, path,
+    w: meta.w || null, h: meta.h || null,
+    byUid: currentUid(),
+    createdAt: new Date().toISOString(),
+  };
+  await setDoc(doc(db, 'families', fid, 'cards', cardId), data, { merge: true });
+  return { id: cardId, ...data };
+}
+// Удаление карточки из каталога НЕ трогает награды детей: добытое не отнимается
+// (§336). Такая карточка просто пропадает с витрины (см. orphans в cards-core).
+export async function deleteCard(fid, cardId) {
+  try { await deleteObject(storageRef(storage, cardPath(fid, cardId))); }
+  catch (e) { if (e?.code !== 'storage/object-not-found') throw e; }
+  await deleteDoc(doc(db, 'families', fid, 'cards', cardId));
+}
+
 // ── Дом и настройки ──────────────────────────────────────────────────────────
 export async function getHome(fid) {
   const snap = await getDoc(doc(db, 'families', fid, 'home', 'map'));

@@ -202,6 +202,19 @@
         </div>
         <div id="done-extra" class="muted"></div>
       </div>
+
+      <!-- Награда-карточка: каталог загружает родитель (cards.html), выпадает
+           только за уборку, подтверждённую проверкой. -->
+      <div class="card col hidden" id="card-win">
+        <strong id="card-win-title">Новая карточка!</strong>
+        <div class="row">
+          <img id="card-img" alt="" style="width:150px;aspect-ratio:3/4;object-fit:cover;border-radius:14px;background:var(--line)">
+          <div class="col">
+            <div class="task-text" id="card-name">—</div>
+            <a class="btn btn-ghost" href="collection.html">Вся коллекция →</a>
+          </div>
+        </div>
+      </div>
       <div class="row">
         <button class="btn btn-primary btn-big" id="btn-again" style="max-width:340px">Ещё одно место</button>
         <a class="btn btn-ghost" href="index.html">Домой</a>
@@ -215,11 +228,13 @@
     import {
       initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
       getHome, getProfile, getSettings, getReference, getRewards, saveRewards, saveProgress,
+      listCards,
     } from './js/store.js';
     import { scan, verify, reward } from './js/ai.js';
     import { startCamera, stopCamera, cameraErrorText } from './js/camera.js';
     import { prepareScanFrame, revokeFrame } from './js/image.js';
-    import { theme, roomsInOrder, reconcileRouteOrder, FALLBACK_THEME } from './js/family-core.js';
+    import { theme, roomsInOrder, reconcileRouteOrder, FALLBACK_THEME, addCard, cardsForTheme } from './js/family-core.js';
+    import { pickCard } from './js/cards-core.js';
     import {
       buildRound, stepTask, stepItems, isItemDone, toggleItem, completeStep, skipStep,
       isFinished, roundProgress, roundTaskText, finishRound, elapsedMs, formatDuration,
@@ -472,13 +487,33 @@
       try {
         await saveProgress(fid, profileId, sessionFromRound(round));
         const rewards = await getRewards(fid, profileId);
-        const next = applyRoundToRewards(rewards, round);
+        let next = applyRoundToRewards(rewards, round);
+        // Карточка — только за уборку, подтверждённую проверкой: то же правило,
+        // что и у счётчика уборок, и оно же держит мотивацию снимать «после».
+        let won = null;
+        if (round.verify?.done === true) {
+          const catalog = await listCards(fid).catch(() => []);
+          won = pickCard(catalog, th.id, cardsForTheme(next, th.id));
+          if (won) next = addCard(next, th.id, won.id);
+        }
         await saveRewards(fid, profileId, next);
+        showCard(won);
         $('done-extra').textContent = `Всего у тебя: ${th.currencyEmoji} ${next.currency} · уборок: ${next.cleanupsTotal}`;
       } catch (e) {
         console.error('save:', e);
         $('done-extra').textContent = 'Искорки засчитаны, но записать не вышло — проверь связь.';
       }
+    }
+
+    // Выпавшая карточка. Нет карточки — блок просто не показываем: пустая
+    // награда («сегодня ничего») хуже, чем её отсутствие.
+    function showCard(card) {
+      const box = $('card-win');
+      if (!card) { box.classList.add('hidden'); return; }
+      $('card-img').src = card.url;
+      $('card-name').textContent = card.name || 'Новая карточка';
+      box.classList.remove('hidden');
+      say(`Новая карточка: ${card.name || ''}`);
     }
 
     // ── Переходы ──
@@ -538,6 +573,7 @@
       if (frameBefore) { revokeFrame(frameBefore); frameBefore = null; }
       round = null; stopTimer(); $('timer').textContent = '0:00';
       $('estimate').classList.add('hidden');
+      $('card-win').classList.add('hidden');
       if (rooms.length > 1) { renderRooms(); show('step-room'); renderHeader(); } else goMode();
     };
     $('btn-exit').onclick = () => { stopCamera(); stopTimer(); setBusy(false); };

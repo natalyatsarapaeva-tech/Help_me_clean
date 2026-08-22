@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Карточки — Наведи и убери</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#3A5DA8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .back { text-decoration: none; color: var(--muted); font-weight: 800; }
+    .step { display: none; }
+    .step.on { display: block; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 16px; }
+    .card-tile { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .card-tile img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 12px; background: var(--line); }
+    .card-tile .nm { font-weight: 800; line-height: 1.2; }
+    .card-tile .btn { min-height: 44px; padding: 0 12px; font-size: 15px; }
+    .frame { position: relative; border-radius: var(--radius); overflow: hidden; background: #000; line-height: 0; max-width: 720px; }
+    .frame video, .frame img { display: block; width: 100%; max-height: 56vh; object-fit: contain; background: #000; }
+    .shutter { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); width: 84px; height: 84px;
+      border-radius: 50%; border: 6px solid #fff; background: rgba(255,255,255,.28); cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+    .theme-pick { display: flex; gap: 10px; flex-wrap: wrap; }
+    .theme-pick .btn.on { outline: 4px solid var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="wrap col">
+    <a class="back" href="index.html">← Назад</a>
+    <h1>Карточки коллекции</h1>
+
+    <!-- Каталог семьи. -->
+    <section id="step-list" class="step on col">
+      <p class="muted">
+        За подтверждённую уборку ребёнок получает одну карточку из этого набора.
+        Что это будет — решаете вы: наклейки, рисунки, кадры из мультика, семейные фото.
+        Карточка принадлежит образу: у Миньона своя витрина, у Джедая своя,
+        «для обоих» выпадает в любом.
+      </p>
+      <div class="row">
+        <span class="chip" id="summary">—</span>
+        <button class="btn btn-primary" id="btn-add" style="margin-left:auto">+ Добавить карточку</button>
+      </div>
+      <div id="grid" class="grid"></div>
+      <p class="muted hidden" id="empty">
+        Пока пусто. Без карточек уборка работает — просто в конце не будет награды-карточки.
+      </p>
+    </section>
+
+    <!-- Съёмка / выбор файла. -->
+    <section id="step-shoot" class="step col">
+      <h1>Новая карточка</h1>
+      <p class="muted">Сфотографируйте наклейку или рисунок — или выберите готовый файл.</p>
+      <div class="frame" id="frame">
+        <video id="video" playsinline muted></video>
+        <button class="shutter" id="btn-shot" aria-label="Снять"></button>
+      </div>
+      <div class="row">
+        <label class="btn btn-ghost" style="max-width:320px">
+          🖼 Выбрать файл
+          <input id="file-input" type="file" accept="image/*" hidden>
+        </label>
+        <span class="muted" id="cam-error"></span>
+      </div>
+      <button class="btn btn-ghost" id="btn-cancel" style="max-width:240px">← К списку</button>
+    </section>
+
+    <!-- Подпись и образ. -->
+    <section id="step-meta" class="step col">
+      <h1>Как её зовут?</h1>
+      <div class="row" style="align-items:flex-start">
+        <div class="frame" style="max-width:280px"><img id="preview" alt=""></div>
+        <div class="col" style="flex:1;min-width:260px">
+          <input id="card-name" class="field" placeholder="Название (например, «Кевин»)" maxlength="40">
+          <div class="muted">В каком образе она выпадает?</div>
+          <div class="theme-pick" id="theme-pick"></div>
+          <div class="row">
+            <button class="btn btn-primary" id="btn-save">Сохранить</button>
+            <button class="btn btn-ghost" id="btn-retake">Другое фото</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div id="toast" class="toast"></div>
+  </div>
+
+  <script type="module">
+    import {
+      initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
+      listCards, saveCard, deleteCard,
+    } from './js/store.js';
+    import { startCamera, stopCamera, cameraErrorText } from './js/camera.js';
+    import { compressCard } from './js/image.js';
+    import { THEMES, THEME_IDS } from './js/family-core.js';
+    import { CARD_ANY, normalizeCatalog, catalogSummary, makeCardId } from './js/cards-core.js';
+
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const STEPS = ['step-list', 'step-shoot', 'step-meta'];
+    const show = id => STEPS.forEach(s => $(s).classList.toggle('on', s === id));
+    let toastTimer;
+    const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); };
+
+    const THEME_LABEL = { [CARD_ANY]: '🎲 Для обоих', ...Object.fromEntries(THEME_IDS.map(t => [t, `${THEMES[t].currencyEmoji} ${THEMES[t].label}`])) };
+    let fid = null, cards = [], shot = null, pickedTheme = CARD_ANY;
+
+    function renderList() {
+      const s = catalogSummary(cards);
+      $('summary').textContent = s.total
+        ? `Всего ${s.total} · ${THEME_IDS.map(t => `${THEMES[t].label}: ${s.byTheme[t]}`).join(' · ')} · для обоих: ${s.byTheme[CARD_ANY]}`
+        : 'Карточек пока нет';
+      $('empty').classList.toggle('hidden', !!s.total);
+      $('grid').innerHTML = normalizeCatalog(cards).map(c => `
+        <div class="card card-tile" data-card="${esc(c.id)}">
+          <img src="${esc(c.url)}" alt="">
+          <div class="nm">${esc(c.name || 'Без названия')}</div>
+          <div class="muted" style="font-size:14px">${esc(THEME_LABEL[c.theme] || c.theme)}</div>
+          <button class="btn btn-ghost drop">Удалить</button>
+        </div>`).join('');
+      $('grid').querySelectorAll('[data-card]').forEach(el => {
+        const id = el.dataset.card;
+        el.querySelector('.drop').onclick = async () => {
+          if (!confirm('Удалить карточку из набора? У детей уже добытые останутся.')) return;
+          try {
+            await deleteCard(fid, id);
+            cards = cards.filter(c => c.id !== id);
+            renderList();
+            toast('Карточка удалена');
+          } catch (e) { console.error(e); toast('Не удалось удалить'); }
+        };
+      });
+    }
+
+    function renderThemePick() {
+      $('theme-pick').innerHTML = [CARD_ANY, ...THEME_IDS].map(t => `
+        <button class="btn btn-ghost ${t === pickedTheme ? 'on' : ''}" data-theme="${t}">${esc(THEME_LABEL[t])}</button>`).join('');
+      $('theme-pick').querySelectorAll('[data-theme]').forEach(el => {
+        el.onclick = () => { pickedTheme = el.dataset.theme; renderThemePick(); };
+      });
+    }
+
+    async function goShoot() {
+      show('step-shoot');
+      try {
+        await startCamera($('video'));
+        $('frame').style.display = '';
+        $('cam-error').textContent = '';
+      } catch (e) {
+        $('frame').style.display = 'none';
+        $('cam-error').textContent = cameraErrorText(e);
+      }
+    }
+
+    async function capture(source) {
+      try {
+        dropShot();
+        shot = await compressCard(source);
+        stopCamera();
+        $('preview').src = shot.url;
+        renderThemePick();
+        show('step-meta');
+        $('card-name').focus();
+      } catch (e) { console.error(e); toast('Не получилось — попробуйте другое фото'); }
+    }
+    function dropShot() { if (shot?.url) URL.revokeObjectURL(shot.url); shot = null; }
+
+    $('btn-add').onclick = () => { pickedTheme = CARD_ANY; $('card-name').value = ''; goShoot(); };
+    $('btn-shot').onclick = () => capture($('video'));
+    $('file-input').onchange = e => { const f = e.target.files?.[0]; if (f) capture(f); e.target.value = ''; };
+    $('btn-cancel').onclick = () => { stopCamera(); dropShot(); show('step-list'); };
+    $('btn-retake').onclick = () => { dropShot(); goShoot(); };
+    $('btn-save').onclick = async () => {
+      if (!shot) return;
+      const name = $('card-name').value.trim();
+      if (!name) { toast('Дайте карточке имя — ребёнок будет его называть'); $('card-name').focus(); return; }
+      $('btn-save').disabled = true;
+      try {
+        const id = makeCardId(name);
+        const saved = await saveCard(fid, id, shot.blob, { name, theme: pickedTheme, w: shot.w, h: shot.h });
+        cards = [...cards, saved];
+        dropShot();
+        renderList();
+        show('step-list');
+        toast('Карточка добавлена');
+      } catch (e) {
+        console.error(e);
+        toast(e?.code === 'storage/unauthorized' ? 'Storage отклонил загрузку — проверьте правила' : 'Не удалось сохранить');
+      } finally { $('btn-save').disabled = false; }
+    };
+
+    // ── Старт: только для родителя ──
+    (async () => {
+      const user = await initAuth();
+      if (!user || !currentUid()) { location.href = 'index.html'; return; }
+      const families = await listMyFamilies();
+      fid = resolveActiveFamily(families) || getActiveFamilyId();
+      const mine = families.find(f => f.id === fid);
+      if (mine?.role !== 'parent') { toast('Только для родителя'); setTimeout(() => location.href = 'index.html', 800); return; }
+      try { cards = await listCards(fid); } catch (e) { console.warn('cards:', e); }
+      renderList();
+    })();
+  </script>
+  <script src="pwa.js"></script>
+</body>
+</html>

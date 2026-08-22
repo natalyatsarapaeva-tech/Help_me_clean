@@ -5,8 +5,10 @@
 
 export const MAX_SCAN = 1024;      // кадр для /scan (§228)
 export const MAX_REFERENCE = 1600; // эталонное фото
+export const MAX_CARD = 900;       // карточка коллекции (её смотрят с планшета)
 export const SCAN_Q = 0.7;
 export const REFERENCE_Q = 0.8;
+export const CARD_Q = 0.8;
 export const MIN_BRIGHTNESS = 0.28; // ниже — «Включи свет» (§470)
 
 // Вписать (w,h) в квадрат maxSide, сохранив пропорции. Не увеличивает.
@@ -93,6 +95,15 @@ export async function prepareScanFrame(source, { maxSide = MAX_SCAN, quality = S
 // Эталонное фото: сжать до 1600px для загрузки в Storage. Источник — тот же
 // набор, что и у кадра сканера: родитель снимает эталон живой камерой.
 export async function compressReference(source, { maxSide = MAX_REFERENCE, quality = REFERENCE_Q } = {}) {
+  const img = await toDrawable(source);
+  const { canvas, w, h } = drawToCanvas(img, maxSide);
+  const blob = await canvasToBlob(canvas, quality);
+  return { blob, w, h, url: URL.createObjectURL(blob) };
+}
+
+// Карточка коллекции: родитель фотографирует наклейку/рисунок или берёт файл.
+// 900px хватает: карточку смотрят в сетке на планшете, а не печатают.
+export async function compressCard(source, { maxSide = MAX_CARD, quality = CARD_Q } = {}) {
   const img = await toDrawable(source);
   const { canvas, w, h } = drawToCanvas(img, maxSide);
   const blob = await canvasToBlob(canvas, quality);

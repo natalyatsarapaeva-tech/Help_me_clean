@@ -75,18 +75,21 @@
         🧹 Убирать!
       </a>
 
+      <a id="btn-collection" class="btn btn-ghost hidden" href="collection.html"
+         style="display:flex;align-items:center;justify-content:center;text-decoration:none">🃏 Моя коллекция</a>
+
       <div class="row hidden" id="parent-nav">
         <a class="btn btn-ghost" href="home.html">🏠 Дом</a>
         <a class="btn btn-ghost" href="children.html">🧒 Дети</a>
         <a class="btn btn-ghost" href="reference.html">📸 Эталоны</a>
+        <a class="btn btn-ghost" href="cards.html">🃏 Карточки</a>
       </div>
 
       <div class="card col">
         <strong>Профили детей</strong>
         <div id="profiles" class="muted">Загрузка…</div>
         <div class="muted" style="font-size:14px">
-          Дальше по ТЗ: коллекция карточек, режим B (маршрут по комнате),
-          реальные награды.
+          Дальше по ТЗ: реальные награды и бюджет, join второго взрослого по коду.
         </div>
       </div>
     </section>
@@ -216,6 +219,7 @@
       $('role-chip').textContent = isParent ? '👑 Родитель' : '🧒 Ребёнок';
       $('parent-nav').classList.toggle('hidden', !isParent);
       $('btn-change-who').classList.toggle('hidden', isParent);
+      $('btn-collection').classList.toggle('hidden', isParent);
       $('join-code').textContent = fam?.joinCode || '——————';
 
       if (isParent) {

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Коллекция — Наведи и убери</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#3A5DA8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .back { text-decoration: none; color: var(--muted); font-weight: 800; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px; }
+    .slot { padding: 10px; display: flex; flex-direction: column; gap: 8px; text-align: center; }
+    .slot img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 12px; }
+    /* Закрытый слот — силуэт, а не пустое место: видно, что коллекция продолжается. */
+    .slot.locked { opacity: .75; }
+    .slot.locked .shape { width: 100%; aspect-ratio: 3 / 4; border-radius: 12px; background: var(--line);
+      display: flex; align-items: center; justify-content: center; font-size: 44px; color: var(--muted); }
+    .slot .nm { font-weight: 800; line-height: 1.2; }
+    .slot.locked .nm { color: var(--muted); }
+    .bar { height: 12px; border-radius: 999px; background: var(--line); overflow: hidden; max-width: 520px; }
+    .bar > i { display: block; height: 100%; background: var(--accent); transition: width .4s ease; }
+  </style>
+</head>
+<body>
+  <div class="wrap col">
+    <div class="row" style="justify-content:space-between">
+      <a class="back" href="index.html">← Назад</a>
+      <span class="chip" id="theme-chip">—</span>
+    </div>
+    <h1 id="title">Моя коллекция</h1>
+    <div class="row"><span class="chip" id="count">—</span></div>
+    <div class="bar"><i id="bar" style="width:0%"></i></div>
+    <p class="muted" id="hint"></p>
+    <div id="grid" class="grid"></div>
+  </div>
+
+  <script type="module">
+    import {
+      initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
+      listCards, getRewards,
+    } from './js/store.js';
+    import { theme, cardsForTheme, FALLBACK_THEME } from './js/family-core.js';
+    import { collectionView } from './js/cards-core.js';
+
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+    // Витрина — той темы, в которой ребёнок сегодня («Кто ты сегодня?» на входе).
+    const th = theme(sessionStorage.getItem('tidy.todayTheme') || FALLBACK_THEME);
+    document.documentElement.setAttribute('data-theme', th.id);
+
+    (async () => {
+      const user = await initAuth();
+      if (!user || !currentUid()) { location.href = 'index.html'; return; }
+      const families = await listMyFamilies();
+      const fid = resolveActiveFamily(families) || getActiveFamilyId();
+      $('theme-chip').textContent = `${th.currencyEmoji} ${th.label}`;
+
+      const [catalog, rewards] = await Promise.all([
+        listCards(fid).catch(() => []),
+        getRewards(fid, currentUid()).catch(() => null),
+      ]);
+      const owned = cardsForTheme(rewards || {}, th.id);
+      const v = collectionView(catalog, th.id, owned);
+
+      $('count').textContent = v.total ? `${v.got} из ${v.total}` : 'Карточек пока нет';
+      $('bar').style.width = `${v.total ? Math.round((v.got / v.total) * 100) : 0}%`;
+      $('hint').textContent = !v.total
+        ? 'Родители ещё не добавили карточки.'
+        : v.complete ? 'Ты собрал всё! 🎉' : 'Каждая уборка с проверкой приносит новую карточку.';
+
+      $('grid').innerHTML = v.cards.map(c => c.owned
+        ? `<div class="card slot"><img src="${esc(c.url)}" alt=""><div class="nm">${esc(c.name || '')}</div></div>`
+        : `<div class="card slot locked"><div class="shape">?</div><div class="nm">Ещё не твоя</div></div>`).join('');
+    })();
+  </script>
+  <script src="pwa.js"></script>
+</body>
+</html>
