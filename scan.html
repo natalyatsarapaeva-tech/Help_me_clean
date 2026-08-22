@@ -45,6 +45,22 @@
     @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.035); } }
     @media (prefers-reduced-motion: reduce) { .box { animation: none; } }
 
+    /* Режим B: точки маршрута поверх кадра комнаты. Класс .stop, а НЕ .pin:
+       .pin в styles.css — это поле ввода PIN-кода (letter-spacing: 12px),
+       и подпись под точкой от него разъезжалась по буквам. Видно всю дорогу — что уже
+       пройдено, где стоим, куда дальше: ребёнок физически ходит по комнате. */
+    .stop { position: absolute; transform: translate(-50%, -50%); border-radius: 999px; padding: 0;
+      border: none; text-align: center; }
+    .stop.now { width: 68px; height: 68px; border: 6px solid #fff; background: var(--c); color: #fff;
+      font-size: 26px; font-weight: 800; line-height: 56px; cursor: pointer;
+      box-shadow: 0 0 0 4px rgba(0,0,0,.35), 0 0 26px var(--c); animation: pulse 1.6s ease-in-out infinite; }
+    .stop.done { width: 28px; height: 28px; background: rgba(255,255,255,.85); color: #1c7a3f;
+      font-size: 16px; font-weight: 800; line-height: 28px; }
+    .stop.next { width: 20px; height: 20px; background: rgba(255,255,255,.45); box-shadow: 0 0 0 3px rgba(0,0,0,.3); }
+    .stop .tag { position: absolute; top: 74px; left: 50%; transform: translateX(-50%); background: var(--c); color: #fff;
+      font-size: 15px; font-weight: 800; line-height: 1.3; letter-spacing: normal; padding: 4px 10px;
+      border-radius: 999px; white-space: nowrap; }
+
     /* Кнопка съёмки — поверх видео, крупная, по центру снизу. */
     .shutter {
       position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
@@ -78,6 +94,7 @@
       <a class="back" href="index.html" id="btn-exit">← Выйти</a>
       <span class="chip" id="room-chip">Комната</span>
       <span class="grow"></span>
+      <span class="chip hidden" id="estimate">≈</span>
       <span class="chip" id="timer">0:00</span>
       <span class="chip spark" id="sparkles">✨ 0</span>
       <a class="btn btn-ghost btn-mini hidden" id="btn-music" target="_blank" rel="noopener">🎵 Музыка</a>
@@ -89,6 +106,17 @@
       <h1>С чего начнём?</h1>
       <p class="muted" id="room-hint">Выбери комнату — начинать лучше со своей.</p>
       <div class="rooms" id="rooms"></div>
+    </section>
+
+    <!-- Шаг 0.5. Что именно убираем: стол крупным планом (A) или всю комнату (B).
+         Это разные задачи и разные промпты, и ребёнок выбирает сам. -->
+    <section id="step-mode" class="step col">
+      <h1 id="mode-title">Что убираем?</h1>
+      <div class="rooms">
+        <button class="avatar-btn room-btn" data-mode="closeup">🪑<span class="name">Стол или полка</span></button>
+        <button class="avatar-btn room-btn" data-mode="overview">🚪<span class="name">Вся комната</span></button>
+      </div>
+      <button class="btn btn-ghost" id="btn-back-rooms" style="max-width:240px">← Другая комната</button>
     </section>
 
     <!-- Шаг 1. Живая камера: «наведи на стол». -->
@@ -133,10 +161,11 @@
               <div class="muted" id="task-of">Шаг 1 из 1</div>
             </div>
           </div>
+          <div class="task-text hidden" id="task-title">—</div>
           <div class="task-text" id="task-instruction">—</div>
           <div class="muted" id="task-target">—</div>
           <button class="btn btn-primary btn-big" id="btn-done">Готово ✓</button>
-          <div class="muted" style="font-size:14px">Можно отмечать вещи пальцем — или сразу «Готово».</div>
+          <div class="muted" id="task-hint" style="font-size:14px">Можно отмечать вещи пальцем — или сразу «Готово».</div>
           <button class="btn btn-ghost" id="btn-skip">Тут такого нет</button>
           <div class="card surprise hidden" id="surprise">🎁 <span id="surprise-text">Сюрприз!</span></div>
         </div>
@@ -199,7 +228,7 @@
 
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-    const STEPS = ['step-room', 'step-camera', 'step-thinking', 'step-round', 'step-after', 'step-done'];
+    const STEPS = ['step-room', 'step-mode', 'step-camera', 'step-thinking', 'step-round', 'step-after', 'step-done'];
     const show = id => STEPS.forEach(s => $(s).classList.toggle('on', s === id));
     let toastTimer;
     const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); };
@@ -208,11 +237,22 @@
     let fid = null, profileId = null, isParent = false;
     let th = theme(sessionStorage.getItem('tidy.todayTheme') || FALLBACK_THEME);
     let rooms = [], room = null;
+    // Режим A (стол крупным планом) или B (обход комнаты) — выбирает ребёнок.
+    let mode = 'closeup';
     let round = null;
     let frameBefore = null;   // стоп-кадр «до»: и в /scan, и потом в /verify
     let timerId = null;
 
     document.documentElement.setAttribute('data-theme', th.id);
+
+    // Одна фраза под режим: на столе «Собери бумаги. Их четыре», в обходе
+    // «Синий грузовик — в ящик с игрушками».
+    function sayTask(t) {
+      if (!t) return;
+      say(t.mode === 'overview'
+        ? [t.title, t.instruction].filter(Boolean).join(' — ')
+        : `${t.instruction}. Их ${t.total}.`);
+    }
 
     // ── Озвучка (§374). Громкая — у миньона, у джедая тишина. ──
     function say(text) {
@@ -264,35 +304,67 @@
 
     function renderHeader() {
       $('sparkles').textContent = `${th.currencyEmoji} ${round ? round.sparkles : 0}`;
+      const est = round?.estimatedMinutes;
+      $('estimate').textContent = est ? `≈ ${est} мин` : '';
+      $('estimate').classList.toggle('hidden', !est);
       const p = roundProgress(round || {});
       $('bar').style.width = `${p.percent}%`;
       $('room-chip').textContent = room ? `${room.icon || '🏠'} ${room.name}` : 'Уборка';
     }
 
-    // ── Раунд: подсветка одного цвета + панель задания ──
+    // ── Раунд: подсветка одного цвета (A) или точка маршрута (B) + панель ──
     function renderRound() {
       const task = stepTask(round);
       if (!task) { goVerify(); return; }
+      const overview = task.mode === 'overview';
       $('task-emoji').textContent = task.emoji;
       $('task-emoji').style.setProperty('--c', task.color);
-      $('task-done').textContent = task.done;
-      $('task-total').textContent = task.total;
-      $('task-of').textContent = `Шаг ${task.number} из ${task.of}`;
+      $('task-done').textContent = overview ? task.number : task.done;
+      $('task-total').textContent = overview ? task.of : task.total;
+      $('task-of').textContent = overview ? 'Точка маршрута' : `Шаг ${task.number} из ${task.of}`;
+      $('task-title').textContent = task.title;
+      $('task-title').classList.toggle('hidden', !task.title);
       $('task-instruction').textContent = task.instruction;
       $('task-target').textContent = `→ ${task.target}`;
+      $('btn-done').textContent = overview ? 'Убрал ✓' : 'Готово ✓';
+      $('btn-skip').textContent = overview ? 'Тут ничего нет' : 'Тут такого нет';
+      $('task-hint').textContent = overview
+        ? 'Дойди, убери — и жми по точке или по кнопке.'
+        : 'Можно отмечать вещи пальцем — или сразу «Готово».';
 
-      $('boxes').innerHTML = stepItems(round).map(it => {
+      $('boxes').innerHTML = overview ? routePins(task) : colorBoxes(task);
+      $('boxes').querySelectorAll('[data-item]').forEach(el => {
+        el.onclick = overview
+          // В обходе тап по большой точке = «убрал»: рука уже там, где предмет.
+          ? () => closeStep()
+          : () => { round = toggleItem(round, +el.dataset.item); renderRound(); };
+      });
+
+      $('surprise').classList.toggle('hidden', !round.surpriseNow);
+      renderHeader();
+    }
+
+    // Режим A: рамки вокруг предметов одного цвета.
+    function colorBoxes(task) {
+      return stepItems(round).map(it => {
         const [x, y, w, h] = it.box;
         return `<button class="box ${isItemDone(round, it.id) ? 'done' : ''}" data-item="${it.id}"
           style="--c:${task.color};left:${x * 100}%;top:${y * 100}%;width:${w * 100}%;height:${h * 100}%">
           ${it.label ? `<span class="tag">${esc(it.label)}</span>` : ''}</button>`;
       }).join('');
-      $('boxes').querySelectorAll('[data-item]').forEach(el => {
-        el.onclick = () => { round = toggleItem(round, +el.dataset.item); renderRound(); };
-      });
+    }
 
-      $('surprise').classList.toggle('hidden', !round.surpriseNow);
-      renderHeader();
+    // Режим B: вся дорога сразу — пройденное, текущая точка, что впереди.
+    function routePins(task) {
+      return round.items.map((it, i) => {
+        const [x, y] = it.point || [0.5, 0.5];
+        const state = i < round.index ? 'done' : (i === round.index ? 'now' : 'next');
+        const pos = `left:${x * 100}%;top:${y * 100}%`;
+        if (state === 'done') return `<span class="stop done" style="${pos}">✓</span>`;
+        if (state === 'next') return `<span class="stop next" style="${pos}"></span>`;
+        return `<button class="stop now" data-item="${it.id}" style="--c:${task.color};${pos}">${i + 1}
+          ${it.label ? `<span class="tag">${esc(it.label)}</span>` : ''}</button>`;
+      }).join('');
     }
 
     // Сюрприз (§330) — живая фраза от персонажа, но экран её не ждёт.
@@ -310,13 +382,13 @@
       show('step-thinking');
       $('thinking-text').textContent = 'Смотрю, что тут у тебя…';
       try {
-        const scanned = await scan(frame.base64, { mode: 'closeup', roomType: room?.type, roomName: room?.name });
+        const scanned = await scan(frame.base64, { mode, roomType: room?.type, roomName: room?.name });
         round = buildRound(scanned, {
           roomId: room?.id || null, roomName: room?.name || '', themeId: th.id, profileId,
         });
         if (!round.steps.length) {
           revokeFrame(frame); frameBefore = null;
-          toast('Тут уже чисто! Наведи на другое место.');
+          toast(mode === 'overview' ? 'В комнате чисто! Попробуй другую.' : 'Тут уже чисто! Наведи на другое место.');
           await goCamera();
           return;
         }
@@ -325,8 +397,7 @@
         startTimer();
         show('step-round');
         renderRound();
-        const t = stepTask(round);
-        say(`${t.instruction}. Их ${t.total}.`);
+        sayTask(stepTask(round));
       } catch (e) {
         console.error(e);
         revokeFrame(frame); frameBefore = null;
@@ -412,9 +483,20 @@
 
     // ── Переходы ──
     async function goCamera() {
+      $('cam-hint').textContent = mode === 'overview'
+        ? 'Встань у двери и покажи всю комнату целиком — и жми большую кнопку'
+        : 'Наведи камеру на стол или полку — и жми большую кнопку';
       show('step-camera');
       renderHeader();
       await openCamera($('video'), $('cam-fallback'));
+    }
+
+    // Комната выбрана — спрашиваем, что именно убираем.
+    function goMode() {
+      $('mode-title').textContent = room ? `${room.icon || '🏠'} ${room.name}: что убираем?` : 'Что убираем?';
+      $('btn-back-rooms').classList.toggle('hidden', rooms.length < 2);
+      show('step-mode');
+      renderHeader();
     }
 
     async function shoot(source) {
@@ -437,15 +519,15 @@
     $('btn-shot2').onclick = () => shootAfter($('video2'));
     $('file-input').onchange = e => { const f = e.target.files?.[0]; if (f) shoot(f); e.target.value = ''; };
     $('file-input2').onchange = e => { const f = e.target.files?.[0]; if (f) shootAfter(f); e.target.value = ''; };
-    $('btn-done').onclick = () => {
+    function closeStep() {
       const task = stepTask(round);
       round = completeStep(round);
       if (round.surpriseNow) celebrate(task);
       if (isFinished(round)) { renderHeader(); goVerify(); return; }
       renderRound();
-      const next = stepTask(round);
-      say(`${next.instruction}. Их ${next.total}.`);
-    };
+      sayTask(stepTask(round));
+    }
+    $('btn-done').onclick = closeStep;
     $('btn-skip').onclick = () => {
       round = skipStep(round);
       if (isFinished(round)) { renderHeader(); goVerify(); return; }
@@ -455,9 +537,16 @@
     $('btn-again').onclick = async () => {
       if (frameBefore) { revokeFrame(frameBefore); frameBefore = null; }
       round = null; stopTimer(); $('timer').textContent = '0:00';
-      if (rooms.length > 1) { renderRooms(); show('step-room'); renderHeader(); } else await goCamera();
+      $('estimate').classList.add('hidden');
+      if (rooms.length > 1) { renderRooms(); show('step-room'); renderHeader(); } else goMode();
     };
     $('btn-exit').onclick = () => { stopCamera(); stopTimer(); setBusy(false); };
+
+    // ── Выбор режима ──
+    document.querySelectorAll('[data-mode]').forEach(el => {
+      el.onclick = async () => { mode = el.dataset.mode; await goCamera(); };
+    });
+    $('btn-back-rooms').onclick = () => { renderRooms(); show('step-room'); };
 
     // ── Выбор комнаты ──
     function renderRooms() {
@@ -465,7 +554,7 @@
         <button class="avatar-btn room-btn" data-room="${esc(r.id)}">${esc(r.icon || '🏠')}
           <span class="name">${esc(r.name)}</span></button>`).join('');
       $('rooms').querySelectorAll('[data-room]').forEach(el => {
-        el.onclick = async () => { room = rooms.find(r => r.id === el.dataset.room) || null; await goCamera(); };
+        el.onclick = () => { room = rooms.find(r => r.id === el.dataset.room) || null; goMode(); };
       });
     }
 
@@ -503,12 +592,12 @@
       } catch (e) { console.warn('home:', e); }
 
       renderHeader();
-      if (room) { await goCamera(); return; }
+      if (room) { goMode(); return; }
       if (!rooms.length) {
         // Карты дома ещё нет — это не повод не убирать: сканер работает и так.
         $('room-hint').textContent = 'Карта дома ещё не создана — можно убирать и без неё.';
         $('rooms').innerHTML = '';
-        await goCamera();
+        goMode();
         return;
       }
       renderRooms();

@@ -186,3 +186,71 @@ test('пустой скан — раунд без шагов, сразу «чи�
   assert.equal(roundProgress(r).percent, 0);
   assert.equal(applyRoundToRewards(emptyRewards(), r).currency, 0);
 });
+
+// ── Режим B: обход комнаты по точкам (§268) ─────────────────────────────────
+const RAW_ROUTE = {
+  mode: 'overview',
+  route: [
+    { step: 1, label: 'синий грузовик', point: [0.22, 0.71], action: 'в ящик с игрушками', category: 'toys' },
+    { step: 2, label: 'мишка', point: [0.40, 0.62], action: 'в ящик с игрушками', category: 'toys' },
+    { step: 3, label: 'носки', point: [0.70, 0.80], action: 'в корзину', category: 'clothes' },
+  ],
+  estimated_minutes: 6,
+};
+const route0 = () => buildRound(sanitizeScan(RAW_ROUTE), {
+  roomId: 'maya', roomName: 'Комната Майи', themeId: 'jedi', profileId: 'kid1',
+  now: fixed(0), rand: () => 0,
+});
+
+test('обход комнаты: шаг — одна точка, порядок модельный (не наш словарь)', () => {
+  const r = route0();
+  assert.equal(r.mode, 'overview');
+  assert.equal(r.estimatedMinutes, 6);
+  assert.equal(r.steps.length, 3, 'три точки — три шага, а не два цвета');
+  assert.deepEqual(r.steps.map(s => s.itemIds), [[1], [2], [3]]);
+  assert.deepEqual(r.steps.map(s => s.category), ['toys', 'toys', 'clothes'],
+    'порядок обхода сохранён: гонять ребёнка по комнате «по нашему порядку цветов» нельзя');
+  assert.equal(r.items[0].point.length, 2);
+  assert.equal(r.items[0].box, undefined, 'у точек нет рамок');
+});
+
+test('задание точки: своё действие модели важнее общего текста категории', () => {
+  const t = stepTask(route0());
+  assert.equal(t.mode, 'overview');
+  assert.equal(t.title, 'синий грузовик');
+  assert.equal(t.instruction, 'в ящик с игрушками'); // не «Игрушки в свой ящик»
+  assert.equal(t.target, 'Ящик');
+  assert.deepEqual(t.point, [0.22, 0.71]);
+  assert.equal(t.total, 1);
+  assert.equal(t.of, 3);
+});
+
+test('обход: шаги закрываются по одному, искорка за каждый', () => {
+  let r = route0();
+  r = completeStep(r, { now: fixed(1), rand: () => 0 });
+  assert.equal(stepTask(r).title, 'мишка');
+  assert.equal(r.sparkles, SPARKLES.step);
+  r = completeStep(r, { now: fixed(2), rand: () => 0 });
+  r = completeStep(r, { now: fixed(3), rand: () => 0 });
+  assert.ok(isFinished(r));
+  assert.equal(roundProgress(r).itemsDone, 3);
+  assert.equal(applyRoundToRewards(emptyRewards(), finishRound(r, { done: true }, { now: fixed(4) })).currency,
+    3 * SPARKLES.step + 5);
+});
+
+test('текст для /verify в обходе не повторяет одну категорию десять раз', () => {
+  let r = route0();
+  r = completeStep(r, { now: fixed(1), rand: () => 0 });
+  r = completeStep(r, { now: fixed(2), rand: () => 0 }); // обе игрушки
+  r = completeStep(r, { now: fixed(3), rand: () => 0 }); // носки
+  assert.equal(roundTaskText(r), 'Игрушки в свой ящик; Одежду в корзину или в шкаф');
+  assert.equal(roundTaskText(route0()), 'убрать комнату');
+});
+
+test('в прогресс пишется режим — иначе история A и B неразличима', () => {
+  const s = sessionFromRound(finishRound(route0(), { done: true }, { now: fixed(10) }));
+  assert.equal(s.mode, 'overview');
+  assert.equal(s.itemsTotal, 3);
+  assert.equal(JSON.stringify(s).includes('0.22'), false, 'координаты точек наружу не уходят');
+  assert.equal(sessionFromRound(round0()).mode, 'closeup');
+});

@@ -29,22 +29,43 @@ export function orderCategories(categories) {
 }
 
 // ── Сборка раунда из ответа сканера ─────────────────────────────────────────
-// scanned — результат sanitizeScan (mode: 'closeup'), уже без мусорных категорий.
+// Два режима, ОДНА структура раунда — экран и начисления не раздваиваются:
+//
+//   closeup (режим A, §244) — стол/полка крупным планом. Шаг = ЦВЕТ: все бумаги
+//     разом, потом все игрушки. Предметы с рамками (box), порядок наш (ROUND_ORDER).
+//   overview (режим B, §268) — обход комнаты. Шаг = ОДНА ТОЧКА на полу: «синий
+//     грузовик → в ящик». Порядок оставляем модельный: она уже сгруппировала
+//     однотипное подряд, а физически ребёнок ходит по комнате, и перескакивать
+//     через неё «по нашему словарю» значило бы гонять его туда-сюда.
+//
+// scanned — результат sanitizeScan.
 export function buildRound(scanned, {
   roomId = null, roomName = '', themeId = null, profileId = null,
   now = Date.now, rand = Math.random, id = null,
 } = {}) {
-  const items = (scanned?.items || []).map((it, i) => ({
-    id: it.id ?? i + 1, label: it.label || '', category: it.category, box: it.box,
-  }));
-  const steps = orderCategories([...new Set(items.map(it => it.category))]).map(category => ({
-    category,
-    itemIds: items.filter(it => it.category === category).map(it => it.id),
-    doneAt: null,
-    skipped: false,
-  }));
+  const overview = scanned?.mode === 'overview';
+  const items = overview
+    ? (scanned?.route || []).map((st, i) => ({
+        id: Number.isInteger(st.step) ? st.step : i + 1,
+        label: st.label || '', category: st.category,
+        point: st.point, action: st.action || '',
+      }))
+    : (scanned?.items || []).map((it, i) => ({
+        id: it.id ?? i + 1, label: it.label || '', category: it.category, box: it.box,
+      }));
+  // В обходе каждая точка — свой шаг; на столе шаг собирает весь цвет.
+  const steps = overview
+    ? items.map(it => ({ category: it.category, itemIds: [it.id], doneAt: null, skipped: false }))
+    : orderCategories([...new Set(items.map(it => it.category))]).map(category => ({
+        category,
+        itemIds: items.filter(it => it.category === category).map(it => it.id),
+        doneAt: null,
+        skipped: false,
+      }));
   return {
     id: id || makeSessionId(now, rand),
+    mode: overview ? 'overview' : 'closeup',
+    estimatedMinutes: overview ? (Number(scanned?.estimated_minutes) || null) : null,
     roomId, roomName, themeId, profileId,
     startedAt: new Date(now()).toISOString(),
     finishedAt: null,
@@ -75,19 +96,29 @@ export function stepItems(round) {
   return (round.items || []).filter(it => step.itemIds.includes(it.id));
 }
 // Всё, что нужно экрану, чтобы нарисовать задание: цвет, эмодзи, текст, счётчик.
+// В обходе комнаты у шага есть имя предмета и своё действие от модели («в ящик
+// с игрушками») — оно точнее общего «Игрушки в свой ящик», поэтому идёт первым.
 export function stepTask(round) {
   const step = currentStep(round);
   if (!step) return null;
   const cat = actionCategory(step.category);
   const total = step.itemIds.length;
   const done = step.itemIds.filter(id => (round.doneItemIds || []).includes(id)).length;
+  const items = stepItems(round);
+  const overview = round.mode === 'overview';
+  const first = items[0] || {};
   return {
+    mode: round.mode || 'closeup',
     category: step.category,
     color: cat.color, emoji: cat.emoji,
-    instruction: cat.instruction, target: cat.target,
+    // В обходе заголовок — сам предмет («синий грузовик»), на столе его нет.
+    title: overview ? (first.label || '') : '',
+    instruction: overview ? (first.action || cat.instruction) : cat.instruction,
+    target: cat.target,
+    point: overview ? (first.point || null) : null,
     total, done, allChecked: done >= total,
     // Названия предметов — для озвучки и подсказки («тетрадь, журнал, чек»).
-    labels: stepItems(round).map(it => it.label).filter(Boolean),
+    labels: items.map(it => it.label).filter(Boolean),
     number: round.index + 1, of: round.steps.length,
   };
 }
@@ -141,10 +172,12 @@ export function roundProgress(round) {
   };
 }
 // Что было заданием — одной строкой, для промпта /verify и для истории.
+// Дедупликация обязательна: в обходе комнаты десять точек могут быть одной
+// категорией, и без неё в промпт уедет «Игрушки в ящик; Игрушки в ящик; …».
 export function roundTaskText(round) {
-  const done = (round?.steps || []).filter(s => s.doneAt && !s.skipped)
-    .map(s => actionCategory(s.category)?.instruction).filter(Boolean);
-  return done.join('; ') || 'убрать поверхность';
+  const done = [...new Set((round?.steps || []).filter(s => s.doneAt && !s.skipped)
+    .map(s => actionCategory(s.category)?.instruction).filter(Boolean))];
+  return done.join('; ') || (round?.mode === 'overview' ? 'убрать комнату' : 'убрать поверхность');
 }
 
 // ── Финал раунда: проверка «после» ──────────────────────────────────────────
@@ -185,6 +218,7 @@ export function applyRoundToRewards(rewards, round) {
 export function sessionFromRound(round) {
   return {
     id: round.id,
+    mode: round.mode || 'closeup',
     profileId: round.profileId || null,
     roomId: round.roomId || null,
     roomName: round.roomName || '',
