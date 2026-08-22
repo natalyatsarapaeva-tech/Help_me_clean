@@ -10,6 +10,11 @@
   var reloaded = false;
   navigator.serviceWorker.addEventListener('controllerchange', function () {
     if (reloaded) return;
+    // Но НЕ посреди раунда: перезагрузка на экране уборки стирает подсветку,
+    // счётчик и незаписанные искорки — ребёнок теряет заход из-за выкатки.
+    // Экран уборки поднимает window.__tidyBusy на время раунда; свежий код
+    // подтянется на следующем переходе, ждать он может.
+    if (window.__tidyBusy) { window.__tidyReloadPending = true; return; }
     reloaded = true;
     window.location.reload();
   });

@@ -256,6 +256,15 @@ export async function saveRewards(fid, profileId, rewards) {
   await setDoc(doc(db, 'families', fid, 'profiles', profileId, 'rewards', 'current'), rewards, { merge: true });
 }
 
+// ── Эталонные фото (§300) ────────────────────────────────────────────────────
+// Родитель один раз снимает «как должно выглядеть убранным»; проверка сравнивает
+// «после» с эталоном, а не с идеалом из головы модели. Экрана загрузки пока нет —
+// раунд просто работает без эталона, если документа нет.
+export async function getReference(fid, surfaceId) {
+  const snap = await getDoc(doc(db, 'families', fid, 'reference', surfaceId));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
 // ── Дом и настройки ──────────────────────────────────────────────────────────
 export async function getHome(fid) {
   const snap = await getDoc(doc(db, 'families', fid, 'home', 'map'));

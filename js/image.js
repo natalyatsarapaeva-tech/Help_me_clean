@@ -44,8 +44,18 @@ export function fileToImage(file) {
   });
 }
 
+// Размер источника: <img> отдаёт naturalWidth, <video> — videoWidth, canvas — width.
+// Один helper, чтобы стоп-кадр с живой камеры шёл тем же путём, что и файл.
+export function sourceSize(src) {
+  if (!src) return { w: 0, h: 0 };
+  const w = src.naturalWidth || src.videoWidth || src.width || 0;
+  const h = src.naturalHeight || src.videoHeight || src.height || 0;
+  return { w, h };
+}
+
 function drawToCanvas(img, maxSide) {
-  const { w, h } = fitWithin(img.naturalWidth, img.naturalHeight, maxSide);
+  const src = sourceSize(img);
+  const { w, h } = fitWithin(src.w, src.h, maxSide);
   const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext('2d');
@@ -59,14 +69,19 @@ function canvasToBlob(canvas, quality) {
 }
 
 // Кадр для сканера: сжать до 1024px + проверить яркость. Возвращает
-// { blob, base64, w, h, brightness, tooDark }. Клиент решает, слать ли в /scan.
-export async function prepareScanFrame(fileOrImage, { maxSide = MAX_SCAN, quality = SCAN_Q } = {}) {
-  const img = fileOrImage instanceof Image ? fileOrImage : await fileToImage(fileOrImage);
+// { blob, base64, url, w, h, brightness, tooDark }. Клиент решает, слать ли в /scan.
+// Источник — File (галерея/`capture`), Image, <video> (стоп-кадр живой камеры)
+// или canvas: подсветка потом рисуется поверх ЭТОГО кадра, поэтому важно, чтобы
+// координаты от модели и картинка на экране были из одного и того же кадра.
+export async function prepareScanFrame(source, { maxSide = MAX_SCAN, quality = SCAN_Q } = {}) {
+  const img = (source && typeof source === 'object' && ('naturalWidth' in source || 'videoWidth' in source || source.tagName === 'CANVAS'))
+    ? source : await fileToImage(source);
   const { canvas, ctx, w, h } = drawToCanvas(img, maxSide);
   const brightness = averageBrightness(ctx.getImageData(0, 0, w, h).data);
   const blob = await canvasToBlob(canvas, quality);
   const base64 = await blobToBase64(blob);
-  return { blob, base64, w, h, brightness, tooDark: isTooDark(brightness) };
+  // url — для показа стоп-кадра на экране (освобождать через revokeFrame).
+  return { blob, base64, url: URL.createObjectURL(blob), w, h, brightness, tooDark: isTooDark(brightness) };
 }
 
 // Эталонное фото: сжать до 1600px для загрузки в Storage.
@@ -84,4 +99,9 @@ export function blobToBase64(blob) {
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
+}
+
+// Освободить object URL стоп-кадра, когда он больше не на экране.
+export function revokeFrame(frame) {
+  if (frame?.url) URL.revokeObjectURL(frame.url);
 }

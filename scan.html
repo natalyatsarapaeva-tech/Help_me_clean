@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Уборка — Наведи и убери</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#3A5DA8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    /* Экран уборки — единственный, который ребёнок видит в работе. Всё крупное,
+       ничего мелкого для тапа (§373), альбомная раскладка: кадр слева, задание справа. */
+    .wrap.scan { max-width: 1200px; padding: 12px 16px 16px; }
+    .topbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .topbar .grow { flex: 1; }
+    .topbar .btn-mini { min-height: 44px; padding: 0 14px; font-size: 15px; text-decoration: none; display: inline-flex; align-items: center; }
+    .back { text-decoration: none; color: var(--muted); font-weight: 800; }
+    .bar { height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; margin: 10px 0 14px; }
+    .bar > i { display: block; height: 100%; background: var(--accent); transition: width .35s ease; }
+
+    .step { display: none; }
+    .step.on { display: block; }
+
+    /* Живая камера и стоп-кадр — в одной раме, чтобы не «прыгало» при съёмке. */
+    .stage { display: flex; gap: 16px; align-items: flex-start; }
+    .stage .frame { position: relative; flex: 1 1 auto; min-width: 0; border-radius: var(--radius); overflow: hidden; background: #000; line-height: 0; }
+    .stage .frame video, .stage .frame img { display: block; width: 100%; max-height: 72vh; object-fit: contain; background: #000; }
+    .panel { flex: 0 0 320px; }
+    @media (max-width: 860px) { .stage { flex-direction: column; } .panel { flex: 1 1 auto; width: 100%; } }
+
+    /* Подсветка: только ОДИН цвет за раз (§244). Рамка пульсирует, пока не убрано. */
+    .boxes { position: absolute; inset: 0; }
+    .box {
+      position: absolute; border: 5px solid var(--c); border-radius: 12px; cursor: pointer;
+      box-shadow: 0 0 0 3px rgba(0,0,0,.35), 0 0 22px var(--c); background: color-mix(in srgb, var(--c) 18%, transparent);
+      animation: pulse 1.6s ease-in-out infinite; padding: 0;
+    }
+    .box .tag { position: absolute; left: 0; top: -34px; background: var(--c); color: #fff; font-weight: 800;
+      font-size: 15px; padding: 4px 10px; border-radius: 999px; white-space: nowrap; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+    .box.done { animation: none; opacity: .55; border-style: dashed; background: transparent; }
+    .box.done::after { content: '✓'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      font-size: 44px; color: #fff; text-shadow: 0 2px 8px rgba(0,0,0,.7); }
+    @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.035); } }
+    @media (prefers-reduced-motion: reduce) { .box { animation: none; } }
+
+    /* Кнопка съёмки — поверх видео, крупная, по центру снизу. */
+    .shutter {
+      position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+      width: 96px; height: 96px; border-radius: 50%; border: 6px solid #fff; background: rgba(255,255,255,.28);
+      cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,.4);
+    }
+    .shutter:active { transform: translateX(-50%) scale(.94); }
+    .hint-over { position: absolute; left: 0; right: 0; top: 0; padding: 12px 16px; color: #fff; font-weight: 800;
+      background: linear-gradient(rgba(0,0,0,.55), transparent); line-height: 1.3; }
+
+    .task-color { display: inline-flex; align-items: center; justify-content: center; width: 68px; height: 68px;
+      border-radius: 20px; background: var(--c); font-size: 34px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 30%, transparent); }
+    .counter { font-size: 44px; font-weight: 800; line-height: 1; }
+    .counter small { font-size: 20px; color: var(--muted); font-weight: 800; }
+    .task-text { font-size: 24px; font-weight: 800; }
+    .btn-big { min-height: 76px; font-size: 22px; width: 100%; }
+    .spark { font-weight: 800; }
+    .thinking { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 60px 0; text-align: center; }
+    .dots { font-size: 44px; animation: blink 1.2s infinite; }
+    @keyframes blink { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+    .surprise { border: 3px dashed var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+    .rooms { display: flex; gap: 14px; flex-wrap: wrap; }
+    .room-btn { min-width: 160px; min-height: 120px; font-size: 40px; }
+    .praise { font-size: 30px; font-weight: 800; }
+  </style>
+</head>
+<body>
+  <div class="wrap scan col">
+
+    <div class="topbar">
+      <a class="back" href="index.html" id="btn-exit">← Выйти</a>
+      <span class="chip" id="room-chip">Комната</span>
+      <span class="grow"></span>
+      <span class="chip" id="timer">0:00</span>
+      <span class="chip spark" id="sparkles">✨ 0</span>
+      <a class="btn btn-ghost btn-mini hidden" id="btn-music" target="_blank" rel="noopener">🎵 Музыка</a>
+    </div>
+    <div class="bar"><i id="bar" style="width:0%"></i></div>
+
+    <!-- Шаг 0. Куда идём убирать (порядок — из маршрута, заданного родителем). -->
+    <section id="step-room" class="step on col">
+      <h1>С чего начнём?</h1>
+      <p class="muted" id="room-hint">Выбери комнату — начинать лучше со своей.</p>
+      <div class="rooms" id="rooms"></div>
+    </section>
+
+    <!-- Шаг 1. Живая камера: «наведи на стол». -->
+    <section id="step-camera" class="step col">
+      <div class="stage">
+        <div class="frame">
+          <video id="video" playsinline muted></video>
+          <div class="hint-over" id="cam-hint">Наведи камеру на стол или полку — и жми большую кнопку</div>
+          <button class="shutter" id="btn-shot" aria-label="Снять"></button>
+        </div>
+      </div>
+      <div class="row" id="cam-fallback" style="display:none">
+        <label class="btn btn-primary btn-big" style="max-width:340px">
+          📷 Сделать фото
+          <input id="file-input" type="file" accept="image/*" capture="environment" hidden>
+        </label>
+        <span class="muted" id="cam-error"></span>
+      </div>
+    </section>
+
+    <!-- Шаг 2. Смотрим кадр. -->
+    <section id="step-thinking" class="step">
+      <div class="thinking">
+        <div class="dots">👀</div>
+        <div class="task-text" id="thinking-text">Смотрю, что тут у тебя…</div>
+        <div class="muted">Это займёт пару секунд</div>
+      </div>
+    </section>
+
+    <!-- Шаг 3. РАУНД: один цвет за раз (§244). -->
+    <section id="step-round" class="step">
+      <div class="stage">
+        <div class="frame">
+          <img id="shot" alt="">
+          <div class="boxes" id="boxes"></div>
+        </div>
+        <div class="panel card col">
+          <div class="row">
+            <span class="task-color" id="task-emoji">🟣</span>
+            <div class="col" style="gap:2px">
+              <div class="counter"><span id="task-done">0</span><small>/<span id="task-total">0</span></small></div>
+              <div class="muted" id="task-of">Шаг 1 из 1</div>
+            </div>
+          </div>
+          <div class="task-text" id="task-instruction">—</div>
+          <div class="muted" id="task-target">—</div>
+          <button class="btn btn-primary btn-big" id="btn-done">Готово ✓</button>
+          <div class="muted" style="font-size:14px">Можно отмечать вещи пальцем — или сразу «Готово».</div>
+          <button class="btn btn-ghost" id="btn-skip">Тут такого нет</button>
+          <div class="card surprise hidden" id="surprise">🎁 <span id="surprise-text">Сюрприз!</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Шаг 4. Фото «после» → проверка. -->
+    <section id="step-after" class="step col">
+      <h1 id="after-title">Покажи, что получилось!</h1>
+      <p class="muted" id="after-sub">Сфотографируй то же место с того же ракурса.</p>
+      <div class="stage">
+        <div class="frame">
+          <video id="video2" playsinline muted></video>
+          <button class="shutter" id="btn-shot2" aria-label="Снять"></button>
+        </div>
+      </div>
+      <div class="row" id="cam-fallback2" style="display:none">
+        <label class="btn btn-primary btn-big" style="max-width:340px">
+          📷 Сделать фото
+          <input id="file-input2" type="file" accept="image/*" capture="environment" hidden>
+        </label>
+      </div>
+      <button class="btn btn-ghost" id="btn-skip-verify">Пропустить проверку</button>
+    </section>
+
+    <!-- Шаг 5. Итог. -->
+    <section id="step-done" class="step col">
+      <div class="praise" id="done-praise">Готово!</div>
+      <div class="card col">
+        <div class="row" style="gap:24px">
+          <div><div class="counter" id="done-sparkles">0</div><div class="muted" id="done-currency">искорок</div></div>
+          <div><div class="counter" id="done-time">0:00</div><div class="muted">на уборку</div></div>
+          <div><div class="counter" id="done-items">0</div><div class="muted">убрано вещей</div></div>
+        </div>
+        <div id="done-extra" class="muted"></div>
+      </div>
+      <div class="row">
+        <button class="btn btn-primary btn-big" id="btn-again" style="max-width:340px">Ещё одно место</button>
+        <a class="btn btn-ghost" href="index.html">Домой</a>
+      </div>
+    </section>
+
+    <div id="toast" class="toast"></div>
+  </div>
+
+  <script type="module">
+    import {
+      initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
+      getHome, getProfile, getSettings, getReference, getRewards, saveRewards, saveProgress,
+    } from './js/store.js';
+    import { scan, verify, reward } from './js/ai.js';
+    import { prepareScanFrame, revokeFrame } from './js/image.js';
+    import { theme, roomsInOrder, reconcileRouteOrder, FALLBACK_THEME } from './js/family-core.js';
+    import {
+      buildRound, stepTask, stepItems, isItemDone, toggleItem, completeStep, skipStep,
+      isFinished, roundProgress, roundTaskText, finishRound, elapsedMs, formatDuration,
+      applyRoundToRewards, sessionFromRound,
+    } from './js/round-core.js';
+
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const STEPS = ['step-room', 'step-camera', 'step-thinking', 'step-round', 'step-after', 'step-done'];
+    const show = id => STEPS.forEach(s => $(s).classList.toggle('on', s === id));
+    let toastTimer;
+    const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); };
+
+    // ── Состояние экрана ──
+    let fid = null, profileId = null, isParent = false;
+    let th = theme(sessionStorage.getItem('tidy.todayTheme') || FALLBACK_THEME);
+    let rooms = [], room = null;
+    let round = null;
+    let frameBefore = null;   // стоп-кадр «до»: и в /scan, и потом в /verify
+    let timerId = null;
+
+    document.documentElement.setAttribute('data-theme', th.id);
+
+    // ── Озвучка (§374). Громкая — у миньона, у джедая тишина. ──
+    function say(text) {
+      if (!th.tts || !('speechSynthesis' in window) || !text) return;
+      try {
+        speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'ru-RU'; u.rate = 1.05; u.pitch = 1.2;
+        speechSynthesis.speak(u);
+      } catch (_) {}
+    }
+
+    // ── Камера ──
+    // Одна функция на оба экрана: живой поток, если можно; иначе — <input capture>,
+    // чтобы уборка не упиралась в отсутствие разрешения (старый iPad, http, отказ).
+    let stream = null;
+    async function startCamera(videoEl, fallbackEl) {
+      stopCamera();
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 } }, audio: false,
+        });
+        videoEl.srcObject = stream;
+        await videoEl.play();
+        videoEl.parentElement.style.display = '';
+        if (fallbackEl) fallbackEl.style.display = 'none';
+        return true;
+      } catch (e) {
+        console.warn('getUserMedia:', e?.name || e);
+        videoEl.parentElement.style.display = 'none';
+        if (fallbackEl) fallbackEl.style.display = '';
+        if ($('cam-error')) $('cam-error').textContent = e?.name === 'NotAllowedError'
+          ? 'Камера не разрешена — можно снять фото кнопкой.' : 'Камера недоступна — сними фото кнопкой.';
+        return false;
+      }
+    }
+    function stopCamera() {
+      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+    }
+    window.addEventListener('pagehide', stopCamera);
+
+    // Кадр → проверка яркости (§470) → base64 для сканера.
+    async function grabFrame(source) {
+      const frame = await prepareScanFrame(source);
+      if (frame.tooDark) { revokeFrame(frame); return null; }
+      return frame;
+    }
+
+    // Пока идёт раунд — запрещаем перезагрузку из-за обновления service worker
+    // (см. pwa.js): выкатка посреди уборки не должна стирать подсветку и счётчик.
+    function setBusy(on) { window.__tidyBusy = !!on; }
+
+    // ── Таймер раунда ──
+    function startTimer() {
+      clearInterval(timerId);
+      timerId = setInterval(() => { if (round) $('timer').textContent = formatDuration(elapsedMs(round)); }, 1000);
+    }
+    function stopTimer() { clearInterval(timerId); timerId = null; }
+
+    function renderHeader() {
+      $('sparkles').textContent = `${th.currencyEmoji} ${round ? round.sparkles : 0}`;
+      const p = roundProgress(round || {});
+      $('bar').style.width = `${p.percent}%`;
+      $('room-chip').textContent = room ? `${room.icon || '🏠'} ${room.name}` : 'Уборка';
+    }
+
+    // ── Раунд: подсветка одного цвета + панель задания ──
+    function renderRound() {
+      const task = stepTask(round);
+      if (!task) { goVerify(); return; }
+      $('task-emoji').textContent = task.emoji;
+      $('task-emoji').style.setProperty('--c', task.color);
+      $('task-done').textContent = task.done;
+      $('task-total').textContent = task.total;
+      $('task-of').textContent = `Шаг ${task.number} из ${task.of}`;
+      $('task-instruction').textContent = task.instruction;
+      $('task-target').textContent = `→ ${task.target}`;
+
+      $('boxes').innerHTML = stepItems(round).map(it => {
+        const [x, y, w, h] = it.box;
+        return `<button class="box ${isItemDone(round, it.id) ? 'done' : ''}" data-item="${it.id}"
+          style="--c:${task.color};left:${x * 100}%;top:${y * 100}%;width:${w * 100}%;height:${h * 100}%">
+          ${it.label ? `<span class="tag">${esc(it.label)}</span>` : ''}</button>`;
+      }).join('');
+      $('boxes').querySelectorAll('[data-item]').forEach(el => {
+        el.onclick = () => { round = toggleItem(round, +el.dataset.item); renderRound(); };
+      });
+
+      $('surprise').classList.toggle('hidden', !round.surpriseNow);
+      renderHeader();
+    }
+
+    // Сюрприз (§330) — живая фраза от персонажа, но экран её не ждёт.
+    function celebrate(task) {
+      const fallback = th.praiseWord;
+      $('surprise-text').textContent = fallback;
+      say(fallback);
+      reward({ theme: th.id, closed: task?.instruction, room: room?.name || '' })
+        .then(phrase => { if (phrase && round?.surpriseNow) { $('surprise-text').textContent = phrase; say(phrase); } })
+        .catch(() => {});
+    }
+
+    // ── Сканирование кадра ──
+    async function analyze(frame) {
+      show('step-thinking');
+      $('thinking-text').textContent = 'Смотрю, что тут у тебя…';
+      try {
+        const scanned = await scan(frame.base64, { mode: 'closeup', roomType: room?.type, roomName: room?.name });
+        round = buildRound(scanned, {
+          roomId: room?.id || null, roomName: room?.name || '', themeId: th.id, profileId,
+        });
+        if (!round.steps.length) {
+          revokeFrame(frame); frameBefore = null;
+          toast('Тут уже чисто! Наведи на другое место.');
+          await goCamera();
+          return;
+        }
+        $('shot').src = frame.url;
+        setBusy(true);
+        startTimer();
+        show('step-round');
+        renderRound();
+        const t = stepTask(round);
+        say(`${t.instruction}. Их ${t.total}.`);
+      } catch (e) {
+        console.error(e);
+        revokeFrame(frame); frameBefore = null;
+        toast(e?.code === 429 ? 'Сканер отдыхает до завтра' : 'Не получилось разглядеть — сними ещё раз');
+        await goCamera();
+      }
+    }
+
+    // ── Проверка «после» ──
+    async function goVerify() {
+      stopTimer();
+      $('after-title').textContent = 'Покажи, что получилось!';
+      $('after-sub').textContent = 'Сфотографируй то же место с того же ракурса.';
+      show('step-after');
+      say('Покажи, что получилось!');
+      await startCamera($('video2'), $('cam-fallback2'));
+    }
+
+    async function runVerify(frameAfter) {
+      show('step-thinking');
+      $('thinking-text').textContent = 'Проверяю…';
+      let result = null;
+      try {
+        let referenceUrl = null;
+        if (room?.id) { try { referenceUrl = (await getReference(fid, room.id))?.url || null; } catch (_) {} }
+        result = await verify({
+          imageBefore: frameBefore?.base64 || null,
+          imageAfter: frameAfter.base64,
+          task: roundTaskText(round),
+          referenceUrl,
+        });
+      } catch (e) {
+        console.warn('verify:', e);
+        // Сеть подвела — не наказываем ребёнка: засчитываем как выполненное.
+        result = { done: true, status: 'done', score: 'ok', praise: 'Молодец!', missed: [] };
+      } finally {
+        revokeFrame(frameAfter);
+      }
+      if (result.status === 'retake' || result.status === 'person') {
+        toast(result.status === 'person' ? 'Отойди из кадра и сними ещё раз' : 'Кадр не получился — сними ещё раз');
+        await goVerify();
+        return;
+      }
+      if (!result.done && result.missed.length) {
+        // §296: называем ОДНУ вещь, а не список, и даём переснять.
+        $('after-title').textContent = `Почти! Осталось: ${result.missed[0]}`;
+        $('after-sub').textContent = 'Убери — и сними ещё раз. Или закончи как есть.';
+        show('step-after');
+        say(`Почти! Осталось убрать: ${result.missed[0]}`);
+        await startCamera($('video2'), $('cam-fallback2'));
+        return;
+      }
+      await finish(result);
+    }
+
+    // ── Финал: начисление и запись ──
+    async function finish(verifyResult) {
+      stopTimer();
+      setBusy(false);
+      round = finishRound(round, verifyResult);
+      const p = roundProgress(round);
+      $('done-praise').textContent = verifyResult?.praise || th.praiseWord;
+      $('done-sparkles').textContent = round.sparkles;
+      $('done-currency').textContent = th.currencyName;
+      $('done-time').textContent = formatDuration(elapsedMs(round));
+      $('done-items').textContent = p.itemsDone;
+      $('done-extra').textContent = '';
+      show('step-done');
+      say(verifyResult?.praise || th.praiseWord);
+      renderHeader();
+
+      try {
+        await saveProgress(fid, profileId, sessionFromRound(round));
+        const rewards = await getRewards(fid, profileId);
+        const next = applyRoundToRewards(rewards, round);
+        await saveRewards(fid, profileId, next);
+        $('done-extra').textContent = `Всего у тебя: ${th.currencyEmoji} ${next.currency} · уборок: ${next.cleanupsTotal}`;
+      } catch (e) {
+        console.error('save:', e);
+        $('done-extra').textContent = 'Искорки засчитаны, но записать не вышло — проверь связь.';
+      }
+    }
+
+    // ── Переходы ──
+    async function goCamera() {
+      show('step-camera');
+      renderHeader();
+      await startCamera($('video'), $('cam-fallback'));
+    }
+
+    async function shoot(source) {
+      const frame = await grabFrame(source);
+      if (!frame) { toast('Темновато — включи свет и сними ещё раз'); return; }
+      stopCamera();
+      if (frameBefore) revokeFrame(frameBefore);
+      frameBefore = frame;
+      await analyze(frame);
+    }
+    async function shootAfter(source) {
+      const frame = await grabFrame(source);
+      if (!frame) { toast('Темновато — включи свет и сними ещё раз'); return; }
+      stopCamera();
+      await runVerify(frame);
+    }
+
+    // ── Кнопки ──
+    $('btn-shot').onclick = () => shoot($('video'));
+    $('btn-shot2').onclick = () => shootAfter($('video2'));
+    $('file-input').onchange = e => { const f = e.target.files?.[0]; if (f) shoot(f); e.target.value = ''; };
+    $('file-input2').onchange = e => { const f = e.target.files?.[0]; if (f) shootAfter(f); e.target.value = ''; };
+    $('btn-done').onclick = () => {
+      const task = stepTask(round);
+      round = completeStep(round);
+      if (round.surpriseNow) celebrate(task);
+      if (isFinished(round)) { renderHeader(); goVerify(); return; }
+      renderRound();
+      const next = stepTask(round);
+      say(`${next.instruction}. Их ${next.total}.`);
+    };
+    $('btn-skip').onclick = () => {
+      round = skipStep(round);
+      if (isFinished(round)) { renderHeader(); goVerify(); return; }
+      renderRound();
+    };
+    $('btn-skip-verify').onclick = () => { stopCamera(); finish({ done: false, status: 'incomplete', praise: th.praiseWord, missed: [] }); };
+    $('btn-again').onclick = async () => {
+      if (frameBefore) { revokeFrame(frameBefore); frameBefore = null; }
+      round = null; stopTimer(); $('timer').textContent = '0:00';
+      if (rooms.length > 1) { renderRooms(); show('step-room'); renderHeader(); } else await goCamera();
+    };
+    $('btn-exit').onclick = () => { stopCamera(); stopTimer(); setBusy(false); };
+
+    // ── Выбор комнаты ──
+    function renderRooms() {
+      $('rooms').innerHTML = rooms.map(r => `
+        <button class="avatar-btn room-btn" data-room="${esc(r.id)}">${esc(r.icon || '🏠')}
+          <span class="name">${esc(r.name)}</span></button>`).join('');
+      $('rooms').querySelectorAll('[data-room]').forEach(el => {
+        el.onclick = async () => { room = rooms.find(r => r.id === el.dataset.room) || null; await goCamera(); };
+      });
+    }
+
+    // ── Старт ──
+    (async () => {
+      const user = await initAuth();
+      if (!user || !currentUid()) { location.href = 'index.html'; return; }
+      const families = await listMyFamilies();
+      fid = resolveActiveFamily(families) || getActiveFamilyId();
+      const mine = families.find(f => f.id === fid);
+      isParent = mine?.role === 'parent';
+      profileId = currentUid(); // ребёнок убирает только в своём профиле (правила)
+
+      // Музыка (§ плейлист задаёт родитель в настройках семьи).
+      try {
+        const settings = await getSettings(fid);
+        const url = settings?.playlists?.[th.id];
+        if (url) { $('btn-music').href = url; $('btn-music').classList.remove('hidden'); }
+      } catch (_) {}
+
+      // Комнаты в порядке маршрута: у ребёнка свой порядок, иначе общий по дому.
+      try {
+        const home = await getHome(fid);
+        const all = roomsInOrder(home || { floors: [] });
+        let order = home?.routeOrder || [];
+        if (!isParent) {
+          const prof = await getProfile(fid, profileId).catch(() => null);
+          if (prof?.routeOrder?.length) order = prof.routeOrder;
+        }
+        const byId = new Map(all.map(r => [r.id, r]));
+        rooms = reconcileRouteOrder(order, home || { floors: [] }).map(id => byId.get(id)).filter(Boolean);
+        const params = new URLSearchParams(location.search);
+        const wanted = params.get('room');
+        if (wanted && byId.has(wanted)) room = byId.get(wanted);
+      } catch (e) { console.warn('home:', e); }
+
+      renderHeader();
+      if (room) { await goCamera(); return; }
+      if (!rooms.length) {
+        // Карты дома ещё нет — это не повод не убирать: сканер работает и так.
+        $('room-hint').textContent = 'Карта дома ещё не создана — можно убирать и без неё.';
+        $('rooms').innerHTML = '';
+        await goCamera();
+        return;
+      }
+      renderRooms();
+      show('step-room');
+    })();
+  </script>
+  <script src="pwa.js"></script>
+</body>
+</html>
