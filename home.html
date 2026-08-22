@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Дом — Наведи и убери</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#3A5DA8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .back { text-decoration: none; color: var(--muted); font-weight: 800; }
+    textarea.field { min-height: 160px; padding: 14px 16px; resize: vertical; line-height: 1.4; }
+    .room { display: grid; grid-template-columns: 56px 1fr 180px 44px; gap: 10px; align-items: center; }
+    .room .emoji { width: 56px; height: 56px; text-align: center; font-size: 26px; padding: 0; }
+    .room .del { width: 44px; height: 44px; padding: 0; font-size: 20px; }
+    .floor-head { display: flex; gap: 10px; align-items: center; margin: 6px 0; }
+    .floor-head .field { max-width: 320px; font-weight: 800; }
+    .route-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .route-row .idx { width: 28px; text-align: center; font-weight: 800; color: var(--muted); }
+    .route-row .arrows { display: flex; gap: 6px; margin-left: auto; }
+    .route-row .arrows .btn { min-height: 44px; width: 44px; padding: 0; }
+    .step { display: none; }
+    .step.on { display: block; }
+    @media (max-width: 620px) { .room { grid-template-columns: 48px 1fr; } .room select, .room .del { grid-column: span 1; } }
+  </style>
+</head>
+<body>
+  <div class="wrap col">
+    <a class="back" href="index.html">← Назад</a>
+    <h1>Дом</h1>
+
+    <!-- Шаг 1. Описание дома текстом (§180). -->
+    <section id="step-describe" class="step on col">
+      <p class="muted">Опиши свой дом одним текстом — приложение построит карту комнат. Можно как угодно, своими словами.</p>
+      <textarea id="home-text" class="field" placeholder="У нас двухэтажный дом. Внизу прихожая, кухня, столовая, гостиная и туалет. Наверху спальня родителей, комната Майи, комната мальчиков, ванная и детская ванная. Ещё есть прачечная и гараж."></textarea>
+      <div class="row">
+        <button id="btn-parse" class="btn btn-primary">Построить карту</button>
+        <span id="parse-hint" class="muted"></span>
+      </div>
+    </section>
+
+    <!-- Шаг 2. Подтверждение карты (§185): всё видно и правится. -->
+    <section id="step-confirm" class="step col">
+      <p class="muted">Проверь и поправь: переименуй комнаты, задай эмодзи и тип, удали лишнее. Ничего не создаётся молча.</p>
+      <div id="floors" class="col"></div>
+      <div class="row">
+        <button id="btn-add-floor" class="btn btn-ghost">+ Этаж</button>
+        <button id="btn-to-route" class="btn btn-primary" style="margin-left:auto">Дальше: маршрут →</button>
+      </div>
+    </section>
+
+    <!-- Шаг 3. Маршрут обхода (§214). Домашняя комната — первой. -->
+    <section id="step-route" class="step col">
+      <p class="muted">Порядок обхода. Отметь «домашнюю» комнату — с неё начинается уборка (там мотивация выше). Стрелками поменяй порядок.</p>
+      <div id="route" class="card col"></div>
+      <div class="row">
+        <button id="btn-back-confirm" class="btn btn-ghost">← Комнаты</button>
+        <button id="btn-save" class="btn btn-primary" style="margin-left:auto">Сохранить карту</button>
+      </div>
+    </section>
+
+    <div id="toast" class="toast"></div>
+  </div>
+
+  <script type="module">
+    import {
+      initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
+      getHome, saveHome,
+    } from './js/store.js';
+    import { parseHome } from './js/ai.js';
+    import {
+      ROOM_TYPES, roomTypeLabel, roomsInOrder, defaultRouteOrder, moveInArray,
+      reconcileRouteOrder, makeSurfaceId,
+    } from './js/family-core.js';
+
+    const $ = id => document.getElementById(id);
+    let toastTimer;
+    const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2400); };
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const step = id => ['step-describe', 'step-confirm', 'step-route'].forEach(s => $(s).classList.toggle('on', s === id));
+
+    let fid = null;
+    let home = { floors: [] };
+    let routeOrder = [];
+    let homeRoomId = null;
+
+    // ── Шаг 2: рендер редактируемых этажей/комнат ──
+    function typeOptions(sel) {
+      return ROOM_TYPES.map(t => `<option value="${t}" ${t === sel ? 'selected' : ''}>${esc(roomTypeLabel(t))}</option>`).join('');
+    }
+    function renderFloors() {
+      $('floors').innerHTML = home.floors.map((fl, fi) => `
+        <div class="card col" data-floor="${fi}">
+          <div class="floor-head">
+            <input class="field f-name" value="${esc(fl.name)}" placeholder="Название этажа">
+            <button class="btn btn-ghost f-del" title="Удалить этаж">🗑</button>
+          </div>
+          ${(fl.rooms || []).map((rm, ri) => `
+            <div class="room" data-room="${ri}">
+              <input class="field emoji r-icon" value="${esc(rm.icon || '🏠')}" maxlength="2">
+              <input class="field r-name" value="${esc(rm.name)}" placeholder="Комната">
+              <select class="field r-type">${typeOptions(rm.type)}</select>
+              <button class="btn btn-ghost del r-del" title="Удалить">✕</button>
+            </div>`).join('')}
+          <button class="btn btn-ghost r-add">+ Комната</button>
+        </div>`).join('');
+
+      // обработчики
+      $('floors').querySelectorAll('[data-floor]').forEach(fEl => {
+        const fi = +fEl.dataset.floor;
+        fEl.querySelector('.f-name').oninput = e => { home.floors[fi].name = e.target.value; };
+        fEl.querySelector('.f-del').onclick = () => { home.floors.splice(fi, 1); renderFloors(); };
+        fEl.querySelector('.r-add').onclick = () => {
+          home.floors[fi].rooms.push({ id: makeSurfaceId('room', 'new'), name: '', type: 'other', icon: '🏠', surfaces: [], typical_clutter: [] });
+          renderFloors();
+        };
+        fEl.querySelectorAll('[data-room]').forEach(rEl => {
+          const ri = +rEl.dataset.room;
+          rEl.querySelector('.r-icon').oninput = e => { home.floors[fi].rooms[ri].icon = e.target.value; };
+          rEl.querySelector('.r-name').oninput = e => { home.floors[fi].rooms[ri].name = e.target.value; };
+          rEl.querySelector('.r-type').onchange = e => { home.floors[fi].rooms[ri].type = e.target.value; };
+          rEl.querySelector('.r-del').onclick = () => { home.floors[fi].rooms.splice(ri, 1); renderFloors(); };
+        });
+      });
+    }
+
+    // ── Шаг 3: маршрут ──
+    function renderRoute() {
+      routeOrder = reconcileRouteOrder(routeOrder, home);
+      const byId = new Map(roomsInOrder(home).map(r => [r.id, r]));
+      $('route').innerHTML = routeOrder.map((id, i) => {
+        const r = byId.get(id) || { name: id, icon: '🏠' };
+        return `
+        <div class="route-row" data-i="${i}">
+          <span class="idx">${i + 1}</span>
+          <label class="row" style="gap:8px"><input type="radio" name="homeroom" ${id === homeRoomId ? 'checked' : ''} data-home="${esc(id)}"> 🏠</label>
+          <span>${esc(r.icon || '🏠')} ${esc(r.name)}</span>
+          <span class="arrows">
+            <button class="btn btn-ghost up" ${i === 0 ? 'disabled' : ''}>↑</button>
+            <button class="btn btn-ghost down" ${i === routeOrder.length - 1 ? 'disabled' : ''}>↓</button>
+          </span>
+        </div>`;
+      }).join('') || '<div class="muted">Нет комнат — вернись и добавь.</div>';
+
+      $('route').querySelectorAll('.route-row').forEach(row => {
+        const i = +row.dataset.i;
+        row.querySelector('.up').onclick = () => { routeOrder = moveInArray(routeOrder, i, i - 1); renderRoute(); };
+        row.querySelector('.down').onclick = () => { routeOrder = moveInArray(routeOrder, i, i + 1); renderRoute(); };
+        row.querySelector('[data-home]').onchange = e => { homeRoomId = e.target.dataset.home; routeOrder = moveInArray(routeOrder, routeOrder.indexOf(homeRoomId), 0); renderRoute(); };
+      });
+    }
+
+    // ── Кнопки ──
+    $('btn-parse').onclick = async () => {
+      const text = $('home-text').value.trim();
+      if (text.length < 10) { toast('Опиши дом чуть подробнее'); return; }
+      $('btn-parse').disabled = true; $('parse-hint').textContent = 'Строю карту…';
+      try {
+        const parsed = await parseHome(text);
+        if (!parsed.floors.length) { toast('Не удалось разобрать — попробуй иначе'); return; }
+        home = parsed; renderFloors(); step('step-confirm');
+      } catch (e) {
+        toast(e?.code === 429 ? 'Сканер отдыхает до завтра' : 'Ошибка разбора, попробуй ещё раз');
+      } finally { $('btn-parse').disabled = false; $('parse-hint').textContent = ''; }
+    };
+    $('btn-add-floor').onclick = () => { home.floors.push({ name: `Этаж ${home.floors.length + 1}`, rooms: [] }); renderFloors(); };
+    $('btn-to-route').onclick = () => {
+      const rooms = roomsInOrder(home);
+      if (!rooms.some(r => (r.name || '').trim())) { toast('Добавь хотя бы одну комнату с названием'); return; }
+      home.floors = home.floors.map(fl => ({ ...fl, rooms: (fl.rooms || []).filter(r => (r.name || '').trim()) })).filter(fl => fl.rooms.length);
+      if (!routeOrder.length) routeOrder = defaultRouteOrder(home, homeRoomId);
+      renderRoute(); step('step-route');
+    };
+    $('btn-back-confirm').onclick = () => { renderFloors(); step('step-confirm'); };
+    $('btn-save').onclick = async () => {
+      $('btn-save').disabled = true;
+      try {
+        await saveHome(fid, { floors: home.floors, routeOrder, homeRoomId, updatedAt: new Date().toISOString() });
+        toast('Карта сохранена');
+        setTimeout(() => { location.href = 'index.html'; }, 800);
+      } catch (e) { console.error(e); toast('Не удалось сохранить'); $('btn-save').disabled = false; }
+    };
+
+    // ── Старт: только для родителя ──
+    (async () => {
+      const user = await initAuth();
+      if (!user || !currentUid()) { location.href = 'index.html'; return; }
+      const families = await listMyFamilies();
+      fid = resolveActiveFamily(families) || getActiveFamilyId();
+      const mine = families.find(f => f.id === fid);
+      if (mine?.role !== 'parent') { toast('Только для родителя'); setTimeout(() => location.href = 'index.html', 800); return; }
+      const existing = await getHome(fid);
+      if (existing?.floors?.length) {
+        home = { floors: existing.floors };
+        routeOrder = reconcileRouteOrder(existing.routeOrder || [], home);
+        homeRoomId = existing.homeRoomId || null;
+        renderFloors(); step('step-confirm'); // уже есть карта — сразу к правке
+      }
+    })();
+  </script>
+  <script src="pwa.js"></script>
+</body>
+</html>

@@ -228,3 +228,38 @@ export function sanitizeHome(raw) {
   })).filter(fl => fl.rooms.length);
   return { floors };
 }
+
+// ── Карта дома: подписи типов, порядок обхода, reorder (для онбординга) ──────
+export const ROOM_TYPE_LABELS = {
+  kitchen: 'Кухня', bedroom_child: 'Детская', bathroom: 'Ванная',
+  living: 'Гостиная', hall: 'Прихожая', utility: 'Хозяйственная', other: 'Другое',
+};
+export function roomTypeLabel(t) { return ROOM_TYPE_LABELS[t] || ROOM_TYPE_LABELS.other; }
+
+// Плоский список комнат в порядке этажей (каждой добавляется имя этажа).
+export function roomsInOrder(home) {
+  const floors = Array.isArray(home?.floors) ? home.floors : [];
+  const out = [];
+  for (const fl of floors) for (const rm of (fl.rooms || [])) out.push({ ...rm, floor: fl.name });
+  return out;
+}
+// Порядок обхода по умолчанию (§215): сверху вниз по этажам, домашняя — первой.
+export function defaultRouteOrder(home, homeRoomId) {
+  const ids = roomsInOrder(home).map(r => r.id);
+  if (homeRoomId && ids.includes(homeRoomId)) return [homeRoomId, ...ids.filter(id => id !== homeRoomId)];
+  return ids;
+}
+// Чистый reorder (стрелки/drag). Возвращает новый массив, вход не мутирует.
+export function moveInArray(arr, from, to) {
+  const a = Array.isArray(arr) ? arr.slice() : [];
+  if (from < 0 || from >= a.length || to < 0 || to >= a.length) return a;
+  const [x] = a.splice(from, 1); a.splice(to, 0, x); return a;
+}
+// Синхронизировать сохранённый порядок с актуальными комнатами: убрать
+// исчезнувшие id, дописать появившиеся в конец (комнаты правились в онбординге).
+export function reconcileRouteOrder(savedOrder, home) {
+  const ids = roomsInOrder(home).map(r => r.id);
+  const kept = (Array.isArray(savedOrder) ? savedOrder : []).filter(id => ids.includes(id));
+  const added = ids.filter(id => !kept.includes(id));
+  return [...kept, ...added];
+}

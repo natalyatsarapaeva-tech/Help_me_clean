@@ -10,6 +10,7 @@ import {
   SPARKLES, sparklesFor, nextSurpriseIn, shouldSurprise,
   cornersToXywh, parseJsonObject, parseJsonArray, stripJsonFences,
   sanitizeScan, sanitizeVerify, sanitizeHome,
+  roomTypeLabel, roomsInOrder, defaultRouteOrder, moveInArray, reconcileRouteOrder,
 } from '../js/family-core.js';
 
 test('роли', () => {
@@ -109,6 +110,27 @@ test('sanitizeVerify: мягкая оценка, одна пропущенная
   assert.equal(inc.missed.length, 1); // §296 — одна вещь, не список
   assert.equal(sanitizeVerify({ person_detected: true }).status, 'person');
   assert.equal(sanitizeVerify({ retake: true }).status, 'retake');
+});
+
+test('карта дома: порядок обхода, домашняя комната первой, reorder', () => {
+  const home = { floors: [
+    { name: '2 этаж', rooms: [{ id: 'maya' }, { id: 'bath' }] },
+    { name: '1 этаж', rooms: [{ id: 'kitchen' }] },
+  ] };
+  assert.equal(roomTypeLabel('kitchen'), 'Кухня');
+  assert.equal(roomTypeLabel('zzz'), 'Другое');
+  assert.deepEqual(roomsInOrder(home).map(r => r.id), ['maya', 'bath', 'kitchen']);
+  assert.deepEqual(roomsInOrder(home)[0].floor, '2 этаж');
+  // §215 — домашняя комната ребёнка идёт первой.
+  assert.deepEqual(defaultRouteOrder(home, 'kitchen'), ['kitchen', 'maya', 'bath']);
+  assert.deepEqual(defaultRouteOrder(home, null), ['maya', 'bath', 'kitchen']);
+  // reorder не мутирует вход.
+  const src = ['a', 'b', 'c'];
+  assert.deepEqual(moveInArray(src, 0, 2), ['b', 'c', 'a']);
+  assert.deepEqual(src, ['a', 'b', 'c']);
+  assert.deepEqual(moveInArray(src, 5, 0), ['a', 'b', 'c']); // out of range — без изменений
+  // reconcile: убрать исчезнувшие, дописать новые.
+  assert.deepEqual(reconcileRouteOrder(['bath', 'gone', 'maya'], home), ['bath', 'maya', 'kitchen']);
 });
 
 test('sanitizeHome: валидные типы комнат, отбрасывает пустое', () => {

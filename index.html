@@ -51,6 +51,11 @@
         <button id="btn-copy-code" class="btn btn-ghost">Скопировать</button>
       </div>
 
+      <div class="row hidden" id="parent-nav">
+        <a class="btn btn-ghost" href="home.html">🏠 Дом</a>
+        <a class="btn btn-ghost" href="children.html">🧒 Дети</a>
+      </div>
+
       <div class="card col">
         <strong>Профили детей</strong>
         <div id="profiles" class="muted">Загрузка…</div>
@@ -132,7 +137,9 @@
       const fam = await getFamily(fid);
       $('family-name').textContent = fam?.name || 'Наш дом';
       const mine = families.find(f => f.id === fid);
-      $('role-chip').textContent = mine?.role === 'parent' ? '👑 Родитель' : '🧒 Ребёнок';
+      const isParent = mine?.role === 'parent';
+      $('role-chip').textContent = isParent ? '👑 Родитель' : '🧒 Ребёнок';
+      $('parent-nav').classList.toggle('hidden', !isParent);
       $('join-code').textContent = fam?.joinCode || '——————';
       const profiles = await listProfiles(fid);
       $('profiles').textContent = profiles.length
