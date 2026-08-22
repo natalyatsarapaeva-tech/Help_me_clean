@@ -100,9 +100,13 @@ export const THEMES = {
   },
 };
 export const THEME_IDS = Object.keys(THEMES);
-export const DEFAULT_THEME = 'minion';
-export function theme(id) { return THEMES[id] || THEMES[DEFAULT_THEME]; }
+// ВАЖНО: у профиля НЕТ темы по умолчанию. Тема — выбор самого ребёнка на входе
+// («Кто ты сегодня?»), а не настройка, которую задаёт родитель. Эта константа —
+// только фолбэк отрисовки, пока выбор не сделан.
+export const FALLBACK_THEME = 'minion';
+export function theme(id) { return THEMES[id] || THEMES[FALLBACK_THEME]; }
 export function isValidTheme(id) { return Object.prototype.hasOwnProperty.call(THEMES, id); }
+export function normalizeTheme(id) { return isValidTheme(id) ? id : null; }
 
 // Ранги Джедая (§37) — прогресс только растёт.
 export const JEDI_RANKS = ['Юнлинг', 'Падаван', 'Рыцарь', 'Мастер'];
@@ -117,6 +121,62 @@ export function rankForCleanups(n) {
 // ── Награды (§317). Валюта начисляется только за ЗАКРЫТЫЕ шаги. ──────────────
 export const SPARKLES = { step: 1, room: 5, day: 15 };
 export function sparklesFor(kind) { return SPARKLES[kind] || 0; }
+
+// Что принадлежит РЕБЁНКУ, а что ТЕМЕ:
+//   валюта, счётчик уборок, реальные награды — общие: ребёнок один, тему он
+//   меняет как настроение, и прогресс за это не должен теряться (§49);
+//   коллекция карточек — своя у каждой темы: у миньонов свои существа, у
+//   джедаев свои. Смена темы показывает другую витрину, ничего не отнимая.
+export function emptyRewards() {
+  return {
+    currency: 0,
+    cleanupsTotal: 0,
+    cardsByTheme: Object.fromEntries(THEME_IDS.map(t => [t, []])),
+    realRewards: [],
+    lastSurpriseAt: null,
+  };
+}
+// Приводит документ наград к актуальной форме. Мигрирует старый плоский
+// cards: [id] — карточки без темы уезжают в коллекцию фолбэк-темы.
+export function normalizeRewards(raw) {
+  const r = (raw && typeof raw === 'object') ? raw : {};
+  const base = emptyRewards();
+  const byTheme = { ...base.cardsByTheme };
+  for (const t of THEME_IDS) {
+    const list = r.cardsByTheme?.[t];
+    if (Array.isArray(list)) byTheme[t] = list.slice();
+  }
+  if (Array.isArray(r.cards) && r.cards.length) {
+    const legacy = byTheme[FALLBACK_THEME] || [];
+    byTheme[FALLBACK_THEME] = Array.from(new Set([...legacy, ...r.cards]));
+  }
+  return {
+    currency: Number(r.currency) || 0,
+    cleanupsTotal: Number(r.cleanupsTotal) || 0,
+    cardsByTheme: byTheme,
+    realRewards: Array.isArray(r.realRewards) ? r.realRewards : [],
+    lastSurpriseAt: r.lastSurpriseAt || null,
+  };
+}
+// Коллекция конкретной темы (витрина, куда ребёнок возвращается).
+export function cardsForTheme(rewards, themeId) {
+  return normalizeRewards(rewards).cardsByTheme[normalizeTheme(themeId) || FALLBACK_THEME] || [];
+}
+// Чистое добавление карточки в коллекцию темы (без дублей). Вход не мутирует.
+export function addCard(rewards, themeId, cardId) {
+  const out = normalizeRewards(rewards);
+  const t = normalizeTheme(themeId) || FALLBACK_THEME;
+  if (cardId && !out.cardsByTheme[t].includes(cardId)) out.cardsByTheme[t] = [...out.cardsByTheme[t], cardId];
+  return out;
+}
+// Начисление валюты — всегда на ребёнка, независимо от выбранной темы.
+// Штрафов и обнулений нет (§336): валюта только растёт.
+export function addSparkles(rewards, kind) {
+  const out = normalizeRewards(rewards);
+  out.currency += sparklesFor(kind);
+  if (kind === 'day') out.cleanupsTotal += 1;
+  return out;
+}
 
 // Переменное подкрепление (§330): сюрприз в среднем раз в 4 шага, разброс 2–7.
 // Чистая функция — источник случайности подаётся извне (детерминизм в тестах).

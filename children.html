@@ -34,16 +34,12 @@
     <section id="add" class="card col">
       <strong>Добавить ребёнка</strong>
       <div class="form-grid">
-        <input id="f-avatar" class="field emoji" value="🟡" maxlength="2" title="Аватар">
+        <input id="f-avatar" class="field emoji" value="🧒" maxlength="2" title="Аватар">
         <input id="f-name" class="field" placeholder="Имя (напр. Майя)">
-        <span class="muted">Тема</span>
-        <select id="f-theme" class="field">
-          <option value="minion">🟡 Миньон (младший)</option>
-          <option value="jedi">🔵 Джедай (старший)</option>
-        </select>
         <span class="muted">PIN</span>
         <input id="f-pin" class="field pin" inputmode="numeric" maxlength="4" placeholder="4 цифры">
       </div>
+      <p class="muted" style="font-size:14px">Кем быть — Миньоном или Джедаем — ребёнок выбирает сам при каждом входе. Валюта и прогресс общие, у каждого образа своя коллекция карточек.</p>
       <p class="muted" style="font-size:14px">Ребёнок не знает email и пароль — только этот PIN. Он работает на планшете, где ты нажмёшь «Настроить этот планшет». Пароль показывается один раз.</p>
       <button id="btn-create" class="btn btn-primary">Создать профиль</button>
     </section>
@@ -75,10 +71,10 @@
   <script type="module">
     import {
       initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
-      listProfiles, createChildAccount, setProfileTheme,
+      listProfiles, createChildAccount,
       provisionChildOnThisDevice, signOutUser,
     } from './js/store.js';
-    import { theme, THEME_IDS } from './js/family-core.js';
+    import { theme, normalizeTheme } from './js/family-core.js';
 
     const $ = id => document.getElementById(id);
     let toastTimer;
@@ -91,37 +87,27 @@
     async function renderKids() {
       const kids = await listProfiles(fid);
       if (!kids.length) { $('kids').innerHTML = 'Пока никого. Добавь первого ниже.'; return; }
-      $('kids').innerHTML = kids.map(k => `
+      // Тему не задаём и не меняем — она выбор ребёнка. Показываем последний выбор.
+      $('kids').innerHTML = kids.map(k => {
+        const last = normalizeTheme(k.lastTheme);
+        return `
         <div class="kid" data-uid="${esc(k.id)}">
-          <span class="face">${esc(k.avatar || theme(k.theme).currencyEmoji)}</span>
+          <span class="face">${esc(k.avatar || '🧒')}</span>
           <span class="grow"><strong>${esc(k.name || 'Ребёнок')}</strong></span>
-          <select class="field k-theme" style="max-width:190px">
-            ${THEME_IDS.map(t => `<option value="${t}" ${t === k.theme ? 'selected' : ''}>${esc(theme(t).label)}</option>`).join('')}
-          </select>
-        </div>`).join('');
-      $('kids').querySelectorAll('.kid').forEach(row => {
-        row.querySelector('.k-theme').onchange = async e => {
-          try { await setProfileTheme(fid, row.dataset.uid, e.target.value); toast('Тема сохранена'); }
-          catch { toast('Не удалось сохранить'); }
-        };
-      });
+          <span class="muted" style="font-size:14px">${last ? 'в прошлый раз: ' + esc(theme(last).label) : 'ещё не выбирал(а)'}</span>
+        </div>`;
+      }).join('');
     }
-
-    // Аватар по умолчанию подстраивается под тему, если родитель не менял вручную.
-    let avatarTouched = false;
-    $('f-avatar').oninput = () => { avatarTouched = true; };
-    $('f-theme').onchange = () => { if (!avatarTouched) $('f-avatar').value = $('f-theme').value === 'jedi' ? '🔵' : '🟡'; };
 
     $('btn-create').onclick = async () => {
       const name = $('f-name').value.trim();
-      const themeId = $('f-theme').value;
-      const avatar = $('f-avatar').value.trim() || theme(themeId).currencyEmoji;
+      const avatar = $('f-avatar').value.trim() || '🧒';
       const pin = $('f-pin').value.trim();
       if (!name) { toast('Введи имя'); return; }
       if (!/^\d{4}$/.test(pin)) { toast('PIN — ровно 4 цифры'); return; }
       $('btn-create').disabled = true;
       try {
-        const { email, password } = await createChildAccount(fid, { name, theme: themeId, avatar });
+        const { email, password } = await createChildAccount(fid, { name, avatar });
         lastCreated = { name, avatar, email, password, pin };
         $('created-title').textContent = `Профиль «${name}» создан`;
         $('cred-email').textContent = email;
@@ -152,8 +138,8 @@
       catch { toast('Не удалось скопировать'); }
     };
     $('btn-add-more').onclick = () => {
-      lastCreated = null; avatarTouched = false;
-      $('f-name').value = ''; $('f-pin').value = ''; $('f-avatar').value = $('f-theme').value === 'jedi' ? '🔵' : '🟡';
+      lastCreated = null;
+      $('f-name').value = ''; $('f-pin').value = ''; $('f-avatar').value = '🧒';
       $('created').classList.add('hidden'); $('add').classList.remove('hidden');
     };
 

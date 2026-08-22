@@ -33,6 +33,14 @@
       </div>
     </section>
 
+    <!-- «Кто ты сегодня?» — тему выбирает САМ ребёнок при каждом входе (§24).
+         Валюта и прогресс к теме не привязаны; меняется оформление и коллекция. -->
+    <section id="screen-who" class="hidden col">
+      <h1>Кто ты сегодня?</h1>
+      <p class="muted">Можно выбирать по-разному каждый день. Всё, что ты накопил, останется с тобой.</p>
+      <div class="avatars" id="who-choices"></div>
+    </section>
+
     <!-- Экран входа родителя: email/пароль или Google. -->
     <section id="screen-parent" class="hidden col" style="max-width:420px">
       <h1>Наведи и убери</h1>
@@ -49,7 +57,10 @@
     <section id="screen-app" class="hidden col">
       <div class="row" style="justify-content:space-between">
         <h1 id="family-name">—</h1>
-        <button id="btn-signout" class="btn btn-ghost">Выйти</button>
+        <div class="row">
+          <button id="btn-change-who" class="btn btn-ghost hidden">Сменить, кто я</button>
+          <button id="btn-signout" class="btn btn-ghost">Выйти</button>
+        </div>
       </div>
       <div class="row">
         <span class="chip" id="role-chip">—</span>
@@ -80,11 +91,13 @@
       initAuth, signInEmail, registerEmail, signInGoogle, signInChildWithPin, signOutUser,
       hasChildDevice, childDeviceLabel, currentUid, listMyFamilies, ensureFirstFamily, getFamily,
       resolveActiveFamily, getActiveFamilyId, listProfiles, projectId,
+      rememberChildTheme, getRewards,
     } from './js/store.js';
-    import { theme } from './js/family-core.js';
+    import { theme, THEMES, THEME_IDS, cardsForTheme } from './js/family-core.js';
 
     const $ = id => document.getElementById(id);
-    const show = id => ['screen-child','screen-parent','screen-app'].forEach(s => $(s).classList.toggle('hidden', s !== id));
+    const SCREENS = ['screen-child','screen-who','screen-parent','screen-app'];
+    const show = id => SCREENS.forEach(s => $(s).classList.toggle('hidden', s !== id));
     let toastTimer;
     const toast = (msg) => { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2200); };
 
@@ -114,10 +127,9 @@
     }
 
     // ── Экран ребёнка ──
-    let pendingPinAvatar = false;
     $('child-avatars').addEventListener('click', (e) => {
       if (!e.target.closest('[data-pin-target]')) return;
-      pendingPinAvatar = true; $('pin-box').classList.remove('hidden'); $('pin-input').focus();
+      $('pin-box').classList.remove('hidden'); $('pin-input').focus();
     });
     $('pin-go').onclick = async () => {
       const pin = $('pin-input').value.trim();
@@ -146,27 +158,71 @@
       catch (e) { showError(e); toast(friendlyError(e)); }
     };
     $('btn-signout').onclick = async () => { await signOutUser(); location.reload(); };
+    // Сменить «кто я» можно в любой момент — прогресс и валюта остаются (§49).
+    $('btn-change-who').onclick = () => { renderWhoChoices(); show('screen-who'); };
     $('btn-copy-code').onclick = async () => {
       try { await navigator.clipboard.writeText($('join-code').textContent.trim()); toast('Код скопирован'); }
       catch { toast('Не удалось скопировать'); }
     };
 
-    // ── После входа: гарантируем семью, показываем панель ──
+    // ── Тема сегодняшнего дня (выбор ребёнка, не настройка профиля) ──
+    const THEME_KEY = 'tidy.todayTheme';
+    let activeFid = null;
+    function applyTheme(themeId) {
+      document.documentElement.setAttribute('data-theme', themeId);
+      sessionStorage.setItem(THEME_KEY, themeId);
+    }
+    function renderWhoChoices() {
+      $('who-choices').innerHTML = THEME_IDS.map(t => `
+        <button class="avatar-btn" data-theme-pick="${t}">
+          ${THEMES[t].currencyEmoji}<span class="name">${THEMES[t].label}</span>
+        </button>`).join('');
+      $('who-choices').querySelectorAll('[data-theme-pick]').forEach(btn => {
+        btn.onclick = async () => {
+          const t = btn.dataset.themePick;
+          applyTheme(t);
+          try { await rememberChildTheme(activeFid, currentUid(), t); } catch (e) { console.warn(e); }
+          await openApp(t);
+        };
+      });
+    }
+
+    // ── После входа ──
+    // Родитель → сразу панель. Ребёнок → сначала «Кто ты сегодня?».
     async function afterLogin() {
       let families = await listMyFamilies();
       if (!families.length) { await ensureFirstFamily(); families = await listMyFamilies(); }
-      const fid = resolveActiveFamily(families) || getActiveFamilyId();
-      const fam = await getFamily(fid);
-      $('family-name').textContent = fam?.name || 'Наш дом';
-      const mine = families.find(f => f.id === fid);
+      activeFid = resolveActiveFamily(families) || getActiveFamilyId();
+      const mine = families.find(f => f.id === activeFid);
+      if (mine?.role === 'parent') { await openApp(null); return; }
+      renderWhoChoices();
+      show('screen-who');
+    }
+
+    async function openApp(todayTheme) {
+      const families = await listMyFamilies();
+      const fam = await getFamily(activeFid);
+      const mine = families.find(f => f.id === activeFid);
       const isParent = mine?.role === 'parent';
+      $('family-name').textContent = fam?.name || 'Наш дом';
       $('role-chip').textContent = isParent ? '👑 Родитель' : '🧒 Ребёнок';
       $('parent-nav').classList.toggle('hidden', !isParent);
+      $('btn-change-who').classList.toggle('hidden', isParent);
       $('join-code').textContent = fam?.joinCode || '——————';
-      const profiles = await listProfiles(fid);
-      $('profiles').textContent = profiles.length
-        ? profiles.map(p => `${theme(p.theme).currencyEmoji} ${p.name || p.id}`).join('   ')
-        : 'Пока нет — добавит родитель со своего телефона.';
+
+      if (isParent) {
+        const profiles = await listProfiles(activeFid);
+        $('profiles').textContent = profiles.length
+          ? profiles.map(p => `${p.avatar || '🧒'} ${p.name || p.id}`).join('   ')
+          : 'Пока нет — добавь на экране «Дети».';
+      } else {
+        // Ребёнок: валюта общая, коллекция — своя у выбранной темы.
+        const th = theme(todayTheme);
+        const rewards = await getRewards(activeFid, currentUid());
+        const cards = cardsForTheme(rewards, todayTheme);
+        $('profiles').textContent =
+          `${th.currencyEmoji} ${th.currencyName}: ${rewards.currency}   ·   Карточки ${th.label}: ${cards.length}   ·   Уборок: ${rewards.cleanupsTotal}`;
+      }
       show('screen-app');
     }
 

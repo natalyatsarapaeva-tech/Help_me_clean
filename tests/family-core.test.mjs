@@ -6,8 +6,9 @@ import {
   makeJoinCode, normalizeJoinCode, isValidJoinCode,
   makeFamilyId, makeSessionId, pickActiveFamily,
   ROOM_TYPES, normalizeRoomType, ACTION_IDS, actionCategory, isValidActionCategory,
-  THEME_IDS, theme, isValidTheme, rankForCleanups, JEDI_RANKS,
+  THEME_IDS, theme, isValidTheme, normalizeTheme, FALLBACK_THEME, rankForCleanups, JEDI_RANKS,
   SPARKLES, sparklesFor, nextSurpriseIn, shouldSurprise,
+  emptyRewards, normalizeRewards, cardsForTheme, addCard, addSparkles,
   cornersToXywh, parseJsonObject, parseJsonArray, stripJsonFences,
   sanitizeScan, sanitizeVerify, sanitizeHome,
   roomTypeLabel, roomsInOrder, defaultRouteOrder, moveInArray, reconcileRouteOrder,
@@ -62,8 +63,11 @@ test('типы комнат и цветовой словарь — закрыт�
 test('темы и ранги', () => {
   assert.deepEqual(THEME_IDS, ['minion', 'jedi']);
   assert.equal(theme('minion').currencyName, 'бананы');
-  assert.equal(theme('unknown').id, 'minion'); // фолбэк на дефолт
+  assert.equal(theme('unknown').id, FALLBACK_THEME); // фолбэк только для отрисовки
   assert.ok(isValidTheme('jedi') && !isValidTheme('sith'));
+  // У профиля НЕТ темы по умолчанию — «не выбрано» это null, а не 'minion'.
+  assert.equal(normalizeTheme(undefined), null);
+  assert.equal(normalizeTheme('jedi'), 'jedi');
   assert.equal(rankForCleanups(0), JEDI_RANKS[0]);
   assert.equal(rankForCleanups(100), JEDI_RANKS[3]);
 });
@@ -110,6 +114,41 @@ test('sanitizeVerify: мягкая оценка, одна пропущенная
   assert.equal(inc.missed.length, 1); // §296 — одна вещь, не список
   assert.equal(sanitizeVerify({ person_detected: true }).status, 'person');
   assert.equal(sanitizeVerify({ retake: true }).status, 'retake');
+});
+
+test('награды: валюта общая на ребёнка, коллекции — по темам', () => {
+  const fresh = emptyRewards();
+  assert.equal(fresh.currency, 0);
+  assert.deepEqual(Object.keys(fresh.cardsByTheme), THEME_IDS);
+
+  // Валюта не зависит от темы: копится у ребёнка, смена темы её не трогает.
+  let r = addSparkles(fresh, 'step');
+  r = addSparkles(r, 'room');
+  assert.equal(r.currency, SPARKLES.step + SPARKLES.room);
+  assert.equal(r.cleanupsTotal, 0);
+  r = addSparkles(r, 'day');           // пройден маршрут дня
+  assert.equal(r.cleanupsTotal, 1);
+
+  // Карточки живут в коллекции своей темы и не смешиваются.
+  r = addCard(r, 'minion', 'banana-01');
+  r = addCard(r, 'jedi', 'droid-01');
+  r = addCard(r, 'minion', 'banana-01'); // дубль игнорируется
+  assert.deepEqual(cardsForTheme(r, 'minion'), ['banana-01']);
+  assert.deepEqual(cardsForTheme(r, 'jedi'), ['droid-01']);
+
+  // Вход не мутируется.
+  assert.equal(fresh.currency, 0);
+  assert.deepEqual(fresh.cardsByTheme.minion, []);
+});
+
+test('нормализация наград: миграция старого плоского cards[]', () => {
+  const migrated = normalizeRewards({ currency: 7, cards: ['old-1', 'old-2'], cleanupsTotal: 3 });
+  assert.equal(migrated.currency, 7);
+  assert.equal(migrated.cleanupsTotal, 3);
+  assert.deepEqual(migrated.cardsByTheme[FALLBACK_THEME], ['old-1', 'old-2']);
+  assert.deepEqual(migrated.cardsByTheme.jedi, []);
+  // Мусор на входе не роняет.
+  assert.deepEqual(normalizeRewards(null), emptyRewards());
 });
 
 test('карта дома: порядок обхода, домашняя комната первой, reorder', () => {

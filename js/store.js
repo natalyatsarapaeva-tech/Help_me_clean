@@ -18,7 +18,7 @@ import {
 export { projectId };
 import {
   makeFamilyId, makeJoinCode, normalizeJoinCode, pickActiveFamily,
-  PARENT, CHILD, DEFAULT_THEME,
+  PARENT, CHILD, normalizeTheme, normalizeRewards, emptyRewards,
 } from './family-core.js';
 import {
   provisionChildDevice, hasChildDevice, unlockChildCredentials, clearChildDevice, childDeviceLabel,
@@ -183,7 +183,8 @@ export async function saveProfile(fid, profile) {
   const data = {
     uid: profile.uid,
     name: profile.name || '',
-    theme: profile.theme || DEFAULT_THEME,
+    // Тему родитель НЕ задаёт: ребёнок выбирает сам при входе («Кто ты сегодня?»).
+    lastTheme: normalizeTheme(profile.lastTheme), // null, пока выбора не было
     avatar: profile.avatar || '',
     homeRoomId: profile.homeRoomId || null,
     routeOrder: Array.isArray(profile.routeOrder) ? profile.routeOrder : [],
@@ -196,9 +197,14 @@ export async function saveProfile(fid, profile) {
   }, { merge: true });
   return data;
 }
-// Смена темы ребёнком (§49) — прогресс сохраняется, меняется оформление.
-export async function setProfileTheme(fid, profileId, theme) {
-  await setDoc(doc(db, 'families', fid, 'profiles', profileId), { theme }, { merge: true });
+// Ребёнок выбрал, кто он сегодня (§49). Запоминаем ТОЛЬКО как последний выбор:
+// прогресс и валюта к теме не привязаны — меняются оформление и витрина коллекции.
+export async function rememberChildTheme(fid, profileId, themeId) {
+  const t = normalizeTheme(themeId);
+  if (!t) return;
+  await setDoc(doc(db, 'families', fid, 'profiles', profileId), {
+    lastTheme: t, updatedAt: new Date().toISOString(),
+  }, { merge: true });
 }
 
 // Служебный email/пароль детского аккаунта (§137). Email не подтверждается
@@ -240,9 +246,11 @@ export async function listProgress(fid, profileId) {
 }
 
 // ── Награды (§399) ────────────────────────────────────────────────────────────
+// Валюта и счётчик уборок — на ребёнке; коллекция карточек — по темам
+// (cardsByTheme). normalizeRewards заодно мигрирует старый плоский cards[].
 export async function getRewards(fid, profileId) {
   const snap = await getDoc(doc(db, 'families', fid, 'profiles', profileId, 'rewards', 'current'));
-  return snap.exists() ? snap.data() : { currency: 0, cards: [], rank: null, cleanupsTotal: 0, realRewards: [] };
+  return snap.exists() ? normalizeRewards(snap.data()) : emptyRewards();
 }
 export async function saveRewards(fid, profileId, rewards) {
   await setDoc(doc(db, 'families', fid, 'profiles', profileId, 'rewards', 'current'), rewards, { merge: true });
