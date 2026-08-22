@@ -38,23 +38,24 @@ Storage-правила читают Firestore (членство в семье) �
   дальше планшет логинится по PIN (аватар + 4 цифры). Экран настройки детей —
   часть родительской панели (доработать за этим каркасом).
 
-## 4. Cloudflare Worker (LLM с vision)
+## 4. Cloudflare Worker (LLM с vision) — путь B1: воркер как есть
 
-Переиспользуем существующий воркер Twin и добавляем маршруты под префиксом
-`/tidy/*` (§176 ТЗ). Референс форм запросов/ответов —
-[`worker/tidy-routes.reference.js`](worker/tidy-routes.reference.js).
+Переиспользуем существующий воркер Twin `task-intake-worker` **без изменений**.
+Его эндпоинт `/ai` — тонкий прокси OpenAI: принимает payload chat completions,
+возвращает ответ OpenAI (ключ `OPENAI_API_KEY` — секрет на стороне воркера).
+Промпты строятся на клиенте ([`js/ai.js`](js/ai.js)), разбор/санитайз ответов —
+в чистом ядре. `WORKER_URL` уже вписан.
 
-- `POST /tidy/parse-home` — текст дома → структура этажей/комнат.
-- `POST /tidy/scan` — кадр → подсветка/маршрут.
-- `POST /tidy/verify` — до/после → оценка.
-- `POST /tidy/reward` — одна фраза персонажа.
-- `POST /tidy/join` — присоединение по коду (Admin SDK пишет membership).
-- `GET  /tidy/health` — остаток дневного бюджета.
+- Origin Pages нового приложения (`natalyatsarapaeva-tech.github.io`) — тот же,
+  что у Twin, он уже в allow-list воркера. Ничего добавлять не нужно.
+- AI-режимы работают сразу: `parseHome`, `scan` (closeup/overview), `verify`,
+  `reward`.
 
-Лимиты — по `X-Device-Id` (§174). Суточный бюджет общий; при превышении `429`,
-клиент уходит в режим списка без камеры. Ключ LLM — секрет на стороне воркера.
-Прописать `WORKER_URL` в [`js/ai.js`](js/ai.js) и `workerUrl` при вызове
-`joinFamilyByCode`.
+**Альтернатива B2 (на будущее).** Если захочешь держать промпты и лимиты по
+`X-Device-Id` (§174) на сервере — добавить в воркер маршруты `/tidy/*` по
+референсу [`worker/tidy-routes.reference.js`](worker/tidy-routes.reference.js) и
+переключить `js/ai.js` на них. Тот же файл нужен для `/tidy/join` (присоединение
+второго взрослого по коду через Admin SDK) — это отдельная фича, для MVP не нужна.
 
 ## 5. Иконки PWA
 
