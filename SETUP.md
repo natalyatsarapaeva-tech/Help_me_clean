@@ -19,12 +19,21 @@ Cloudflare Worker для вызовов LLM с vision. Шаги, которые 
 
 Без задеплоенных правил база в test mode — открыта всем.
 
-- **Firestore:** Console → Firestore → **Rules** → вставить
+- **Firestore:** Console → **Firestore Database** → вкладка **Rules** → вставить
   [`firestore.rules`](firestore.rules) → Publish.
-- **Storage:** Console → Storage → **Rules** → вставить
+- **Storage:** Console → **Storage** → вкладка **Rules** → вставить
   [`storage.rules`](storage.rules) → Publish.
 
+> ⚠️ **Это ДВА РАЗНЫХ редактора правил.** Легко перепутать: firestore-правила,
+> вставленные в редактор Storage, спокойно «публикуются», а Firestore при этом
+> продолжает отклонять всё дефолтным deny — приложение падает с
+> `permission-denied` на первом же чтении. Проверяй по URL (`/firestore/` против
+> `/storage/`) и по первой строке файла (`service cloud.firestore` против
+> `service firebase.storage`).
+
 Storage-правила читают Firestore (членство в семье) — деплой обоих обязателен.
+При публикации Storage-правил консоль предложит **выдать IAM-роль** служебному
+аккаунту Storage для cross-service доступа к Firestore — согласиться.
 
 ## 3. Аккаунты и семья
 

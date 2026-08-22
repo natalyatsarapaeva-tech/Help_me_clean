@@ -3,7 +3,7 @@
  * офлайн-фолбэк. Cross-origin (Firestore, Storage, Worker) — мимо кэша.
  * Поднимай CACHE при выкатке, чтобы старый кэш сбрасывался.
  */
-const CACHE = 'tidy-v2';
+const CACHE = 'tidy-v3';
 const ASSETS = [
   './', './index.html', './home.html', './children.html',
   './styles.css', './pwa.js', './manifest.json',

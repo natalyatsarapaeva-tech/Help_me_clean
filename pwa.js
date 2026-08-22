@@ -1,14 +1,29 @@
-/* «Наведи и убери» — на время отладки service worker ОТКЛЮЧЁН.
- * PWA-кэш на GitHub Pages приводил к тому, что браузер отдавал старый код и
- * правки не подхватывались. Здесь мы НЕ регистрируем SW, а также удаляем ранее
- * установленный и чистим кэши, чтобы браузер всегда брал свежую версию.
- * Вернём офлайн-оболочку позже, когда сетап заработает. */
+/* «Наведи и убери» — PWA bootstrap (не модуль; регистрирует service worker).
+ * Перенос Twin pwa.js: при смене контролирующего SW — один reload, чтобы сразу
+ * подтянулся свежий код (важно на iOS-PWA, где старый кэш залипает).
+ *
+ * Если понадобится снова отлаживать «залипший» код — временно заменить тело на
+ * unregister() + caches.delete(), как делали при настройке Firebase.
+ */
 (function () {
   if (!('serviceWorker' in navigator)) return;
-  navigator.serviceWorker.getRegistrations()
-    .then(function (regs) { regs.forEach(function (r) { r.unregister(); }); })
-    .catch(function () {});
-  if (window.caches && caches.keys) {
-    caches.keys().then(function (keys) { keys.forEach(function (k) { caches.delete(k); }); }).catch(function () {});
-  }
+  var reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (reloaded) return;
+    reloaded = true;
+    window.location.reload();
+  });
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('sw.js').then(function (reg) {
+      reg.update();
+      if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      reg.addEventListener('updatefound', function () {
+        var sw = reg.installing;
+        if (!sw) return;
+        sw.addEventListener('statechange', function () {
+          if (sw.state === 'installed' && reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        });
+      });
+    }).catch(function (err) { console.warn('[pwa] sw registration failed:', err); });
+  });
 })();
