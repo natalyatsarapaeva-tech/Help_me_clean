@@ -87,6 +87,9 @@
       if (c.includes('wrong-password') || c.includes('invalid-credential')) return 'Неверный email или пароль';
       if (c.includes('email-already-in-use')) return 'Такой email уже зарегистрирован';
       if (c.includes('operation-not-allowed')) return 'Провайдер входа не включён в Firebase Auth';
+      if (c === 'permission-denied' || /insufficient permissions/i.test(e?.message || '')) {
+        return `Firestore отклонил запись${e?.step ? ` («${e.step}» → ${e.path})` : ''}. Проверь, что правила опубликованы в проекте help-me-clean-7969f.`;
+      }
       if (e?.message === 'wrong-pin') return 'Неверный код, попробуй ещё раз';
       return e?.message || 'Что-то пошло не так';
     }
@@ -117,11 +120,11 @@
       try {
         if (mode === 'signin') await signInEmail(email, pass); else await registerEmail(email, pass);
         await afterLogin();
-      } catch (e) { toast(friendlyError(e)); }
+      } catch (e) { console.error('Вход email / afterLogin:', e); toast(friendlyError(e)); }
     };
     $('btn-google').onclick = async () => {
       try { const cred = await signInGoogle(); if (cred) await afterLogin(); }
-      catch (e) { toast(friendlyError(e)); }
+      catch (e) { console.error('Вход Google / afterLogin:', e); toast(friendlyError(e)); }
     };
     $('btn-signout').onclick = async () => { await signOutUser(); location.reload(); };
     $('btn-copy-code').onclick = async () => {

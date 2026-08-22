@@ -115,18 +115,24 @@ export function resolveActiveFamily(families) {
 
 // ── Семья: создать / первый вход ─────────────────────────────────────────────
 // Родитель регистрируется → авто-создаётся семья, он владелец, получает joinCode.
+// Помечает ошибку шагом и путём — чтобы в консоли было видно, что именно
+// запретили правила (permission-denied на конкретном документе).
+async function at(step, path, promise) {
+  try { return await promise; }
+  catch (e) { console.error(`[createFamily] шаг «${step}» (${path}) →`, e?.code || e?.message || e); e.step = step; e.path = path; throw e; }
+}
 export async function createFamily(name) {
   const uid = currentUid();
   const fid = makeFamilyId(name);
   const now = new Date().toISOString();
-  await setDoc(doc(db, 'families', fid), {
+  await at('семья', `families/${fid}`, setDoc(doc(db, 'families', fid), {
     name: name || 'Наш дом', ownerUid: uid, joinCode: makeJoinCode(), createdAt: now,
-  });
-  await setDoc(doc(db, 'families', fid, 'members', uid), { role: PARENT, addedBy: uid, joinedAt: now });
-  await setDoc(doc(db, 'users', uid, 'families', fid), { role: PARENT, name: name || 'Наш дом', joinedAt: now });
-  await setDoc(doc(db, 'families', fid, 'settings', 'app'), {
+  }));
+  await at('членство', `families/${fid}/members/${uid}`, setDoc(doc(db, 'families', fid, 'members', uid), { role: PARENT, addedBy: uid, joinedAt: now }));
+  await at('индекс', `users/${uid}/families/${fid}`, setDoc(doc(db, 'users', uid, 'families', fid), { role: PARENT, name: name || 'Наш дом', joinedAt: now }));
+  await at('настройки', `families/${fid}/settings/app`, setDoc(doc(db, 'families', fid, 'settings', 'app'), {
     playlists: { minion: '', jedi: '' }, dailyBudget: null,
-  });
+  }));
   setActiveFamilyId(fid);
   return fid;
 }
