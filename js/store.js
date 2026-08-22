@@ -4,7 +4,8 @@
 //   users/{uid}/families/{fid}     — индекс «мои семьи» {role, name, joinedAt}
 //   families/{fid}                 — {name, ownerUid, joinCode, createdAt}
 //   families/{fid}/members/{uid}   — источник прав {role, addedBy, joinedAt}
-//   families/{fid}/profiles/{pid}  — профиль ребёнка (pid == uid), theme/avatar/route
+//   families/{fid}/profiles/{pid}  — профиль ребёнка (документ, НЕ пользователь):
+//                                     name/avatar/lastTheme/route + PIN-замок (хэш)
 //   families/{fid}/profiles/{pid}/progress/{sessionId}
 //   families/{fid}/profiles/{pid}/rewards/current
 //   families/{fid}/reference/{surfaceId}, /cards/{cardId}, /home/*, /settings/*
@@ -12,22 +13,22 @@ import {
   db, doc, getDoc, setDoc, collection, getDocs, query, where,
   auth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
   getRedirectResult, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
-  authReady, createSecondaryAuth, projectId, deleteDoc,
+  authReady, projectId, deleteDoc,
   storage, storageRef, uploadBytes, getDownloadURL, deleteObject,
 } from './firebase.js';
 
 export { projectId };
 import {
   makeFamilyId, makeJoinCode, normalizeJoinCode, pickActiveFamily,
-  PARENT, CHILD, normalizeTheme, normalizeRewards, emptyRewards,
+  PARENT, normalizeTheme, normalizeRewards, emptyRewards,
 } from './family-core.js';
-import {
-  provisionChildDevice, hasChildDevice, unlockChildCredentials, clearChildDevice, childDeviceLabel,
-} from './child-auth.js';
+import { makeProfileId, normalizeProfiles, pickActiveProfile } from './profile-core.js';
+import { hashPin } from './pin.js';
 
-export { normalizeJoinCode, hasChildDevice, childDeviceLabel };
+export { normalizeJoinCode };
 
 const ACTIVE_KEY = 'tidy.activeFamilyId';
+const PROFILE_KEY = 'tidy.activeProfileId';
 
 let currentUser = null;
 onAuthStateChanged(auth, user => { currentUser = user; });
@@ -73,18 +74,9 @@ export async function registerEmail(email, pass) {
 }
 export function signOutUser() { return signOut(auth); }
 
-// ── Вход ребёнка по PIN (§137) ───────────────────────────────────────────────
-// Планшет должен быть заранее провижен родителем (provisionChildOnThisDevice).
-export async function signInChildWithPin(pin) {
-  const { email, password } = await unlockChildCredentials(pin);
-  return signInEmail(email, password);
-}
-// Родитель настраивает детский планшет: сохраняет учётку под PIN на устройстве.
-// label = { name, avatar } — для экрана входа ребёнка (несекретно).
-export async function provisionChildOnThisDevice(pin, email, password, label = {}) {
-  return provisionChildDevice(pin, email, password, label);
-}
-export function forgetChildOnThisDevice() { clearChildDevice(); }
+// Вход в приложение — ТОЛЬКО родительский: планшет становится семейным
+// устройством, а дети выбирают себя на экране профилей (см. profile-core.js).
+// Служебных детских аккаунтов больше нет.
 
 async function ensureUserDoc() {
   const uid = currentUid();
@@ -115,6 +107,26 @@ export function resolveActiveFamily(families) {
   if (active) setActiveFamilyId(active);
   return active;
 }
+
+// ── Кто сейчас убирается на этом устройстве ──────────────────────────────────
+// Выбор живёт в localStorage: переживает перезагрузку и переходы между
+// экранами, чтобы ребёнок не набирал PIN на каждой странице.
+export function getActiveProfileId() { return localStorage.getItem(PROFILE_KEY); }
+export function setActiveProfileId(pid) { localStorage.setItem(PROFILE_KEY, pid); }
+export function clearActiveProfileId() { localStorage.removeItem(PROFILE_KEY); }
+export function resolveActiveProfile(profiles) {
+  const active = pickActiveProfile(profiles, getActiveProfileId());
+  if (!active) clearActiveProfileId();
+  return active;
+}
+
+// Родительская часть открыта до перезапуска приложения: набирать PIN на каждом
+// экране — наказание для родителя. sessionStorage, а не localStorage: закрыл
+// приложение и отдал планшет ребёнку — замок снова на месте.
+const PARENT_KEY = 'tidy.parentUnlocked';
+export function isParentUnlocked() { return sessionStorage.getItem(PARENT_KEY) === '1'; }
+export function unlockParentArea() { sessionStorage.setItem(PARENT_KEY, '1'); }
+export function lockParentArea() { sessionStorage.removeItem(PARENT_KEY); }
 
 // ── Семья: создать / первый вход ─────────────────────────────────────────────
 // Родитель регистрируется → авто-создаётся семья, он владелец, получает joinCode.
@@ -169,7 +181,9 @@ export async function joinFamilyByCode(rawCode, workerUrl) {
   return { id: familyId, name };
 }
 
-// ── Профили детей (§392). profileId == uid ребёнка. ──────────────────────────
+// ── Профили детей. Профиль — ДОКУМЕНТ, а не пользователь Firebase. ───────────
+// У старых профилей id совпадает с uid прежнего служебного аккаунта — это
+// неважно и ничего не ломает: прогресс и награды привязаны к id.
 export async function listProfiles(fid) {
   const snap = await getDocs(collection(db, 'families', fid, 'profiles'));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -178,25 +192,36 @@ export async function getProfile(fid, profileId) {
   const snap = await getDoc(doc(db, 'families', fid, 'profiles', profileId));
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
-// Родитель заводит профиль ребёнка (uid берётся из созданного Firebase-аккаунта).
+// Родитель заводит или правит профиль ребёнка. Никаких аккаунтов и паролей.
 export async function saveProfile(fid, profile) {
   const now = new Date().toISOString();
+  const id = profile.id || makeProfileId(profile.name);
   const data = {
-    uid: profile.uid,
     name: profile.name || '',
     // Тему родитель НЕ задаёт: ребёнок выбирает сам при входе («Кто ты сегодня?»).
     lastTheme: normalizeTheme(profile.lastTheme), // null, пока выбора не было
-    avatar: profile.avatar || '',
+    avatar: profile.avatar || '🧒',
     homeRoomId: profile.homeRoomId || null,
     routeOrder: Array.isArray(profile.routeOrder) ? profile.routeOrder : [],
     updatedAt: now,
     createdAt: profile.createdAt || now,
   };
-  await setDoc(doc(db, 'families', fid, 'profiles', profile.uid), data, { merge: true });
-  await setDoc(doc(db, 'families', fid, 'members', profile.uid), {
-    role: CHILD, addedBy: currentUid(), joinedAt: now,
+  await setDoc(doc(db, 'families', fid, 'profiles', id), data, { merge: true });
+  return { id, ...data };
+}
+
+// PIN профиля: в базу уходит только хэш с солью (js/pin.js). Пустой PIN снимает
+// замок — профиль малыша, который цифры ещё не помнит, открыт.
+export async function setProfilePin(fid, profileId, pin) {
+  const lock = pin ? await hashPin(pin) : null;
+  await setDoc(doc(db, 'families', fid, 'profiles', profileId), {
+    pin: lock, updatedAt: new Date().toISOString(),
   }, { merge: true });
-  return data;
+  return lock;
+}
+export async function deleteProfile(fid, profileId) {
+  await deleteDoc(doc(db, 'families', fid, 'profiles', profileId));
+  if (getActiveProfileId() === profileId) clearActiveProfileId();
 }
 // Ребёнок выбрал, кто он сегодня (§49). Запоминаем ТОЛЬКО как последний выбор:
 // прогресс и валюта к теме не привязаны — меняются оформление и витрина коллекции.
@@ -208,33 +233,13 @@ export async function rememberChildTheme(fid, profileId, themeId) {
   }, { merge: true });
 }
 
-// Служебный email/пароль детского аккаунта (§137). Email не подтверждается
-// Firebase, пароль ребёнку неизвестен (§455) — он знает только PIN.
-function childEmail(name) {
-  const slug = String(name || 'kid').toLowerCase().replace(/[^a-z0-9]/gi, '') || 'kid';
-  return `${slug}-${Math.random().toString(36).slice(2, 8)}@tidy.local`;
-}
-function randomPassword() {
-  return Array.from(crypto.getRandomValues(new Uint8Array(18)), b => b.toString(36)).join('').slice(0, 24);
-}
-
-// Родитель создаёт детский аккаунт: во ВТОРИЧНОМ Firebase-app (иначе создание
-// перелогинит родителя), затем из основного инстанса пишет профиль + членство
-// (правила это разрешают родителю). Возвращает { uid, email, password } —
-// пароль показывается один раз, дальше живёт только зашифрованным на планшете.
-export async function createChildAccount(fid, { name, theme, avatar }) {
-  const email = childEmail(name);
-  const password = randomPassword();
-  const { auth: secAuth, destroy } = await createSecondaryAuth();
-  try {
-    const cred = await createUserWithEmailAndPassword(secAuth, email, password);
-    const uid = cred.user.uid;
-    await signOut(secAuth);
-    await saveProfile(fid, { uid, name, theme, avatar });
-    return { uid, email, password };
-  } finally {
-    await destroy();
-  }
+// Родитель добавляет ребёнка: один документ и (по желанию) PIN. Ни служебного
+// email, ни пароля, ни «показать один раз» — добавить ребёнка на втором планшете
+// теперь означает просто войти на нём родителем.
+export async function createChildProfile(fid, { name, avatar, pin }) {
+  const profile = await saveProfile(fid, { id: makeProfileId(name), name, avatar });
+  if (pin) await setProfilePin(fid, profile.id, pin);
+  return profile;
 }
 
 // ── Прогресс сессии уборки ───────────────────────────────────────────────────
@@ -371,6 +376,14 @@ export async function getSettings(fid) {
   const snap = await getDoc(doc(db, 'families', fid, 'settings', 'app'));
   return snap.exists() ? snap.data() : null;
 }
+// Родительский PIN — замок на «взрослой» части (дом, дети, карточки, награды).
+// Лежит в настройках семьи: правила разрешают писать туда только родителю.
+export async function setParentPin(fid, pin) {
+  const lock = pin ? await hashPin(pin) : null;
+  await setDoc(doc(db, 'families', fid, 'settings', 'app'), { parentPin: lock }, { merge: true });
+  return lock;
+}
+
 export async function saveSettings(fid, settings) {
   await setDoc(doc(db, 'families', fid, 'settings', 'app'), settings, { merge: true });
 }

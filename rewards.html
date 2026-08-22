@@ -59,7 +59,9 @@
     import {
       initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
       listRealRewards, saveRealReward, deleteRealReward, listAllRewards, saveRewards,
+      getSettings, isParentUnlocked,
     } from './js/store.js';
+    import { parentAreaLocked } from './js/profile-core.js';
     import { normalizeShop, makeRewardId, pendingPurchases, markGiven } from './js/shop-core.js';
 
     const $ = id => document.getElementById(id);
@@ -146,8 +148,10 @@
       if (!user || !currentUid()) { location.href = 'index.html'; return; }
       const families = await listMyFamilies();
       fid = resolveActiveFamily(families) || getActiveFamilyId();
-      const mine = families.find(f => f.id === fid);
-      if (mine?.role !== 'parent') { toast('Только для родителя'); setTimeout(() => location.href = 'index.html', 800); return; }
+      // Родительская часть под кодом: если он задан, а в этой сессии его не
+      // вводили — отправляем на главную, там спросят. Замок от ребёнка, не от взлома.
+      const settings = await getSettings(fid).catch(() => null);
+      if (parentAreaLocked(settings) && !isParentUnlocked()) { location.href = 'index.html'; return; }
       try { shop = await listRealRewards(fid); } catch (e) { console.warn('shop:', e); }
       renderShop();
       try { children = await listAllRewards(fid); } catch (e) { console.warn('children:', e); }

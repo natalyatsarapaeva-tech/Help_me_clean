@@ -40,7 +40,7 @@
   <script type="module">
     import {
       initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
-      listCards, getRewards,
+      listCards, getRewards, getActiveProfileId,
     } from './js/store.js';
     import { theme, cardsForTheme, FALLBACK_THEME } from './js/family-core.js';
     import { collectionView } from './js/cards-core.js';
@@ -57,11 +57,13 @@
       if (!user || !currentUid()) { location.href = 'index.html'; return; }
       const families = await listMyFamilies();
       const fid = resolveActiveFamily(families) || getActiveFamilyId();
+      const profileId = getActiveProfileId();
+      if (!profileId) { location.href = 'index.html'; return; }
       $('theme-chip').textContent = `${th.currencyEmoji} ${th.label}`;
 
       const [catalog, rewards] = await Promise.all([
         listCards(fid).catch(() => []),
-        getRewards(fid, currentUid()).catch(() => null),
+        getRewards(fid, profileId).catch(() => null),
       ]);
       const owned = cardsForTheme(rewards || {}, th.id);
       const v = collectionView(catalog, th.id, owned);

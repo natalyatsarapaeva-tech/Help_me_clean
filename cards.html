@@ -90,8 +90,9 @@
   <script type="module">
     import {
       initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
-      listCards, saveCard, deleteCard,
+      listCards, saveCard, deleteCard, getSettings, isParentUnlocked,
     } from './js/store.js';
+    import { parentAreaLocked } from './js/profile-core.js';
     import { startCamera, stopCamera, cameraErrorText } from './js/camera.js';
     import { compressCard } from './js/image.js';
     import { THEMES, THEME_IDS } from './js/family-core.js';
@@ -197,8 +198,10 @@
       if (!user || !currentUid()) { location.href = 'index.html'; return; }
       const families = await listMyFamilies();
       fid = resolveActiveFamily(families) || getActiveFamilyId();
-      const mine = families.find(f => f.id === fid);
-      if (mine?.role !== 'parent') { toast('Только для родителя'); setTimeout(() => location.href = 'index.html', 800); return; }
+      // Родительская часть под кодом: если он задан, а в этой сессии его не
+      // вводили — отправляем на главную, там спросят. Замок от ребёнка, не от взлома.
+      const settings = await getSettings(fid).catch(() => null);
+      if (parentAreaLocked(settings) && !isParentUnlocked()) { location.href = 'index.html'; return; }
       try { cards = await listCards(fid); } catch (e) { console.warn('cards:', e); }
       renderList();
     })();

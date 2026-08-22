@@ -9,6 +9,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <style>
+    .avatar-btn .lock { font-size: 15px; color: var(--muted); font-weight: 800; }
+    .pin-dots { letter-spacing: 12px; text-align: center; font-size: 32px; }
+  </style>
 </head>
 <body>
   <div class="wrap">
@@ -19,32 +23,11 @@
       <span id="err-text"></span>
     </div>
 
-    <!-- Экран входа ребёнка: аватар + PIN (§137). Показывается, если планшет
-         уже провижен родителем. -->
-    <section id="screen-child" class="hidden col">
-      <h1>Привет! Кто ты?</h1>
-      <div class="avatars" id="child-avatars">
-        <button class="avatar-btn" data-pin-target><span id="child-face">🟡</span><span class="name" id="child-name">Я</span></button>
-      </div>
-      <div id="pin-box" class="card col hidden" style="max-width:360px">
-        <div class="muted">Введи свой код</div>
-        <input id="pin-input" class="field pin" inputmode="numeric" maxlength="4" placeholder="••••">
-        <button id="pin-go" class="btn btn-primary">Войти</button>
-      </div>
-    </section>
-
-    <!-- «Кто ты сегодня?» — тему выбирает САМ ребёнок при каждом входе (§24).
-         Валюта и прогресс к теме не привязаны; меняется оформление и коллекция. -->
-    <section id="screen-who" class="hidden col">
-      <h1>Кто ты сегодня?</h1>
-      <p class="muted">Можно выбирать по-разному каждый день. Всё, что ты накопил, останется с тобой.</p>
-      <div class="avatars" id="who-choices"></div>
-    </section>
-
-    <!-- Экран входа родителя: email/пароль или Google. -->
-    <section id="screen-parent" class="hidden col" style="max-width:420px">
+    <!-- Вход в приложение — ОДИН, родительский. Планшет становится семейным
+         устройством; дети не логинятся, а выбирают себя на экране профилей. -->
+    <section id="screen-login" class="hidden col" style="max-width:420px">
       <h1>Наведи и убери</h1>
-      <p class="muted">Вход для родителя</p>
+      <p class="muted">Вход для родителя. Дети потом выбирают себя сами — им аккаунт не нужен.</p>
       <input id="email" class="field" type="email" placeholder="Email" autocomplete="username">
       <input id="password" class="field" type="password" placeholder="Пароль" autocomplete="current-password">
       <button id="btn-email" class="btn btn-primary">Войти</button>
@@ -53,39 +36,88 @@
       <button id="btn-google" class="btn btn-google">Войти через Google</button>
     </section>
 
-    <!-- Приложение после входа (заглушка панели родителя / онбординга). -->
-    <section id="screen-app" class="hidden col">
+    <!-- Кто сейчас у планшета. Главный экран семейного устройства. -->
+    <section id="screen-profiles" class="hidden col">
+      <h1>Кто убирается?</h1>
+      <div class="avatars" id="profiles-list"></div>
+      <p class="muted hidden" id="no-profiles">Профилей пока нет — зайди в родительскую часть и добавь ребёнка.</p>
+      <div class="row" style="margin-top:20px">
+        <button id="btn-parent-area" class="btn btn-ghost">👑 Родителям</button>
+      </div>
+    </section>
+
+    <!-- Ввод PIN: и для профиля ребёнка, и для родительской части. -->
+    <section id="screen-pin" class="hidden col" style="max-width:380px">
+      <h1 id="pin-title">Твой код</h1>
+      <p class="muted" id="pin-sub">Четыре цифры</p>
+      <input id="pin-input" class="field pin-dots" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="off">
+      <button id="pin-go" class="btn btn-primary">Войти</button>
+      <button id="pin-cancel" class="btn btn-ghost">← Назад</button>
+    </section>
+
+    <!-- «Кто ты сегодня?» — образ выбирает сам ребёнок (§24). -->
+    <section id="screen-who" class="hidden col">
+      <h1>Кто ты сегодня?</h1>
+      <p class="muted">Можно выбирать по-разному каждый день. Всё, что ты накопил, останется с тобой.</p>
+      <div class="avatars" id="who-choices"></div>
+    </section>
+
+    <!-- Домашний экран ребёнка. -->
+    <section id="screen-child" class="hidden col">
       <div class="row" style="justify-content:space-between">
-        <h1 id="family-name">—</h1>
+        <h1 id="child-title">—</h1>
         <div class="row">
-          <button id="btn-change-who" class="btn btn-ghost hidden">Сменить, кто я</button>
-          <button id="btn-signout" class="btn btn-ghost">Выйти</button>
+          <button id="btn-change-who" class="btn btn-ghost">Сменить, кто я</button>
+          <button id="btn-switch-profile" class="btn btn-ghost">Это не я</button>
         </div>
       </div>
-      <div class="row">
-        <span class="chip" id="role-chip">—</span>
-        <span class="chip">Код семьи: <span class="code" id="join-code">——————</span></span>
-        <button id="btn-copy-code" class="btn btn-ghost">Скопировать</button>
-      </div>
 
-      <!-- Ядро продукта: раунд с камерой. Для ребёнка это главная (и почти
-           единственная) кнопка на экране — всё остальное мелким шрифтом. -->
       <a id="btn-clean" class="btn btn-primary" href="scan.html"
          style="min-height:96px;font-size:26px;display:flex;align-items:center;justify-content:center;text-decoration:none">
         🧹 Убирать!
       </a>
 
-      <div class="row hidden" id="child-nav">
+      <div class="row">
         <a class="btn btn-ghost" href="collection.html">🃏 Моя коллекция</a>
         <a class="btn btn-ghost" href="shop.html">🎁 Магазин</a>
       </div>
 
-      <div class="row hidden" id="parent-nav">
+      <div class="card col">
+        <div id="child-stats" class="muted">Загрузка…</div>
+      </div>
+    </section>
+
+    <!-- Родительская часть. -->
+    <section id="screen-parent" class="hidden col">
+      <div class="row" style="justify-content:space-between">
+        <h1 id="family-name">—</h1>
+        <div class="row">
+          <button id="btn-to-profiles" class="btn btn-ghost">← К профилям</button>
+          <button id="btn-signout" class="btn btn-ghost">Выйти из аккаунта</button>
+        </div>
+      </div>
+      <div class="row">
+        <span class="chip">👑 Родитель</span>
+        <span class="chip">Код семьи: <span class="code" id="join-code">——————</span></span>
+        <button id="btn-copy-code" class="btn btn-ghost">Скопировать</button>
+      </div>
+
+      <div class="row">
         <a class="btn btn-ghost" href="home.html">🏠 Дом</a>
         <a class="btn btn-ghost" href="children.html">🧒 Дети</a>
         <a class="btn btn-ghost" href="reference.html">📸 Эталоны</a>
         <a class="btn btn-ghost" href="cards.html">🃏 Карточки</a>
         <a class="btn btn-ghost" href="rewards.html">🎁 Награды</a>
+      </div>
+
+      <div class="card col" id="parent-pin-box">
+        <strong id="parent-pin-title">Родительский код</strong>
+        <div class="muted" id="parent-pin-hint">—</div>
+        <div class="row">
+          <input id="parent-pin-input" class="field pin-dots" style="max-width:200px" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="off">
+          <button id="btn-set-parent-pin" class="btn btn-primary">Сохранить код</button>
+          <button id="btn-clear-parent-pin" class="btn btn-ghost hidden">Снять код</button>
+        </div>
       </div>
 
       <div class="card col">
@@ -102,20 +134,28 @@
 
   <script type="module">
     import {
-      initAuth, signInEmail, registerEmail, signInGoogle, signInChildWithPin, signOutUser,
-      hasChildDevice, childDeviceLabel, currentUid, listMyFamilies, ensureFirstFamily, getFamily,
-      resolveActiveFamily, getActiveFamilyId, listProfiles, projectId,
-      rememberChildTheme, getRewards,
+      initAuth, signInEmail, registerEmail, signInGoogle, signOutUser,
+      currentUid, listMyFamilies, ensureFirstFamily, getFamily, projectId,
+      resolveActiveFamily, getActiveFamilyId, listProfiles,
+      getActiveProfileId, setActiveProfileId, clearActiveProfileId, resolveActiveProfile,
+      isParentUnlocked, unlockParentArea, lockParentArea, setParentPin,
+      getSettings, rememberChildTheme, getRewards,
     } from './js/store.js';
     import { theme, THEMES, THEME_IDS, cardsForTheme, rankForCleanups } from './js/family-core.js';
+    import { normalizeProfiles, findProfile, isLocked, parentLock, parentAreaLocked } from './js/profile-core.js';
+    import { verifyPin, isValidPin } from './js/pin.js';
 
     const $ = id => document.getElementById(id);
-    const SCREENS = ['screen-child','screen-who','screen-parent','screen-app'];
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const SCREENS = ['screen-login', 'screen-profiles', 'screen-pin', 'screen-who', 'screen-child', 'screen-parent'];
     const show = id => SCREENS.forEach(s => $(s).classList.toggle('hidden', s !== id));
     let toastTimer;
-    const toast = (msg) => { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2200); };
+    const toast = (msg) => { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2400); };
 
-    // Показать точную ошибку прямо на странице (не нужна консоль).
+    let fid = null, profiles = [], settings = null, activeProfile = null;
+    const THEME_KEY = 'tidy.todayTheme';
+
+    // ── Ошибки ──
     function showError(e) {
       const parts = [];
       if (e?.code) parts.push('code: ' + e.code);
@@ -127,7 +167,6 @@
       $('err-box').classList.remove('hidden');
       console.error(e);
     }
-
     function friendlyError(e) {
       const c = e?.code || '';
       if (c.includes('wrong-password') || c.includes('invalid-credential')) return 'Неверный email или пароль';
@@ -136,23 +175,10 @@
       if (c === 'permission-denied' || /insufficient permissions/i.test(e?.message || '')) {
         return `Firestore отклонил запись${e?.step ? ` («${e.step}» → ${e.path})` : ''}. Проверь, что правила опубликованы в проекте help-me-clean-7969f.`;
       }
-      if (e?.message === 'wrong-pin') return 'Неверный код, попробуй ещё раз';
       return e?.message || 'Что-то пошло не так';
     }
 
-    // ── Экран ребёнка ──
-    $('child-avatars').addEventListener('click', (e) => {
-      if (!e.target.closest('[data-pin-target]')) return;
-      $('pin-box').classList.remove('hidden'); $('pin-input').focus();
-    });
-    $('pin-go').onclick = async () => {
-      const pin = $('pin-input').value.trim();
-      if (pin.length !== 4) { toast('Код — 4 цифры'); return; }
-      try { await signInChildWithPin(pin); await afterLogin(); }
-      catch (e) { toast(friendlyError(e)); }
-    };
-
-    // ── Экран родителя ──
+    // ── Вход родителя ──
     let mode = 'signin';
     $('btn-toggle').onclick = () => {
       mode = mode === 'signin' ? 'register' : 'signin';
@@ -171,17 +197,109 @@
       try { const cred = await signInGoogle(); if (cred) await afterLogin(); }
       catch (e) { showError(e); toast(friendlyError(e)); }
     };
-    $('btn-signout').onclick = async () => { await signOutUser(); location.reload(); };
-    // Сменить «кто я» можно в любой момент — прогресс и валюта остаются (§49).
-    $('btn-change-who').onclick = () => { renderWhoChoices(); show('screen-who'); };
+    $('btn-signout').onclick = async () => { lockParentArea(); clearActiveProfileId(); await signOutUser(); location.reload(); };
+
+    // ── Экран PIN: один на всё, с колбэком «что делать, когда открыли» ──
+    let pinTarget = null; // { lock, onOk }
+    function askPin({ title, sub, lock, onOk }) {
+      pinTarget = { lock, onOk };
+      $('pin-title').textContent = title;
+      $('pin-sub').textContent = sub || 'Четыре цифры';
+      $('pin-input').value = '';
+      show('screen-pin');
+      setTimeout(() => $('pin-input').focus(), 50);
+    }
+    async function submitPin() {
+      if (!pinTarget) return;
+      const pin = $('pin-input').value.trim();
+      if (!isValidPin(pin)) { toast('Код — 4 цифры'); return; }
+      $('pin-go').disabled = true;
+      try {
+        const ok = await verifyPin(pin, pinTarget.lock);
+        if (!ok) { toast('Не тот код, попробуй ещё раз'); $('pin-input').value = ''; $('pin-input').focus(); return; }
+        const done = pinTarget.onOk; pinTarget = null;
+        await done();
+      } finally { $('pin-go').disabled = false; }
+    }
+    $('pin-go').onclick = submitPin;
+    $('pin-input').addEventListener('keydown', e => { if (e.key === 'Enter') submitPin(); });
+    $('pin-cancel').onclick = () => { pinTarget = null; renderProfiles(); show('screen-profiles'); };
+
+    // ── Экран профилей ──
+    function renderProfiles() {
+      $('profiles-list').innerHTML = profiles.map(p => `
+        <button class="avatar-btn" data-profile="${esc(p.id)}">
+          ${esc(p.avatar || '🧒')}
+          <span class="name">${esc(p.name || 'Ребёнок')}</span>
+          <span class="lock">${isLocked(p) ? '🔒 код' : 'без кода'}</span>
+        </button>`).join('');
+      $('no-profiles').classList.toggle('hidden', !!profiles.length);
+      $('profiles-list').querySelectorAll('[data-profile]').forEach(el => {
+        el.onclick = () => enterProfile(findProfile(profiles, el.dataset.profile));
+      });
+    }
+
+    // Выбор себя. PIN — чтобы брат с сестрой не лазили друг к другу; профиль без
+    // PIN открыт (малышу, который цифры ещё не помнит).
+    function enterProfile(p) {
+      if (!p) return;
+      const go = async () => {
+        activeProfile = p;
+        setActiveProfileId(p.id);
+        sessionStorage.removeItem(THEME_KEY); // новый ребёнок — свой выбор образа
+        renderWhoChoices();
+        show('screen-who');
+      };
+      if (isLocked(p)) askPin({ title: `${p.avatar || '🧒'} ${p.name || 'Твой'} код`, sub: 'Введи свои четыре цифры', lock: p.pin, onOk: go });
+      else go();
+    }
+    $('btn-switch-profile').onclick = () => { clearActiveProfileId(); activeProfile = null; renderProfiles(); show('screen-profiles'); };
+
+    // ── Родительская часть за своим PIN ──
+    $('btn-parent-area').onclick = () => {
+      const lock = parentLock(settings);
+      if (!lock || isParentUnlocked()) { openParent(); return; }
+      askPin({ title: '👑 Родительский код', sub: 'Четыре цифры, которые знают взрослые', lock, onOk: async () => { unlockParentArea(); await openParent(); } });
+    };
+    $('btn-to-profiles').onclick = () => { renderProfiles(); show('screen-profiles'); };
     $('btn-copy-code').onclick = async () => {
       try { await navigator.clipboard.writeText($('join-code').textContent.trim()); toast('Код скопирован'); }
       catch { toast('Не удалось скопировать'); }
     };
+    $('btn-set-parent-pin').onclick = async () => {
+      const pin = $('parent-pin-input').value.trim();
+      if (!isValidPin(pin)) { toast('Код — 4 цифры'); return; }
+      $('btn-set-parent-pin').disabled = true;
+      try {
+        await setParentPin(fid, pin);
+        settings = await getSettings(fid);
+        unlockParentArea();
+        $('parent-pin-input').value = '';
+        renderParentPin();
+        toast('Код сохранён');
+      } catch (e) { showError(e); toast('Не удалось сохранить код'); }
+      finally { $('btn-set-parent-pin').disabled = false; }
+    };
+    $('btn-clear-parent-pin').onclick = async () => {
+      if (!confirm('Снять родительский код? Взрослая часть станет открытой для всех.')) return;
+      try {
+        await setParentPin(fid, null);
+        settings = await getSettings(fid);
+        renderParentPin();
+        toast('Код снят');
+      } catch (e) { showError(e); toast('Не удалось снять код'); }
+    };
+    function renderParentPin() {
+      const locked = parentAreaLocked(settings);
+      $('parent-pin-title').textContent = locked ? 'Родительский код' : 'Родительский код не задан';
+      $('parent-pin-hint').textContent = locked
+        ? 'Взрослая часть под кодом. Здесь можно его сменить.'
+        : 'Пока кода нет, ребёнок может зайти сюда и, например, поменять цены в магазине. Задай код — это четыре цифры.';
+      $('btn-clear-parent-pin').classList.toggle('hidden', !locked);
+      $('btn-set-parent-pin').textContent = locked ? 'Сменить код' : 'Задать код';
+    }
 
-    // ── Тема сегодняшнего дня (выбор ребёнка, не настройка профиля) ──
-    const THEME_KEY = 'tidy.todayTheme';
-    let activeFid = null;
+    // ── Тема сегодняшнего дня ──
     function applyTheme(themeId) {
       document.documentElement.setAttribute('data-theme', themeId);
       sessionStorage.setItem(THEME_KEY, themeId);
@@ -195,53 +313,64 @@
         btn.onclick = async () => {
           const t = btn.dataset.themePick;
           applyTheme(t);
-          try { await rememberChildTheme(activeFid, currentUid(), t); } catch (e) { console.warn(e); }
-          await openApp(t);
+          try { await rememberChildTheme(fid, activeProfile.id, t); } catch (e) { console.warn(e); }
+          await openChild(t);
         };
       });
     }
+    $('btn-change-who').onclick = () => { renderWhoChoices(); show('screen-who'); };
+
+    // ── Домашний экран ребёнка ──
+    async function openChild(themeId) {
+      const th = theme(themeId || sessionStorage.getItem(THEME_KEY));
+      applyTheme(th.id);
+      $('child-title').textContent = `${activeProfile.avatar || '🧒'} ${activeProfile.name || 'Привет'}`;
+      show('screen-child');
+      try {
+        const rewards = await getRewards(fid, activeProfile.id);
+        const cards = cardsForTheme(rewards, th.id);
+        $('child-stats').textContent =
+          `${th.currencyEmoji} Можно потратить: ${rewards.currency}   ·   Заработано всего: ${rewards.earnedTotal}   ·   ` +
+          `Карточки ${th.label}: ${cards.length}   ·   Уборок: ${rewards.cleanupsTotal} (${rankForCleanups(rewards.cleanupsTotal)})`;
+      } catch (e) { console.warn(e); $('child-stats').textContent = 'Не удалось загрузить — проверь связь.'; }
+    }
+
+    // ── Родительская панель ──
+    async function openParent() {
+      const fam = await getFamily(fid);
+      $('family-name').textContent = fam?.name || 'Наш дом';
+      $('join-code').textContent = fam?.joinCode || '——————';
+      renderParentPin();
+      $('profiles').textContent = profiles.length
+        ? profiles.map(p => `${p.avatar || '🧒'} ${p.name || p.id}${isLocked(p) ? ' 🔒' : ''}`).join('   ')
+        : 'Пока нет — добавь на экране «Дети».';
+      show('screen-parent');
+    }
 
     // ── После входа ──
-    // Родитель → сразу панель. Ребёнок → сначала «Кто ты сегодня?».
     async function afterLogin() {
       let families = await listMyFamilies();
       if (!families.length) { await ensureFirstFamily(); families = await listMyFamilies(); }
-      activeFid = resolveActiveFamily(families) || getActiveFamilyId();
-      const mine = families.find(f => f.id === activeFid);
-      if (mine?.role === 'parent') { await openApp(null); return; }
-      renderWhoChoices();
-      show('screen-who');
-    }
+      fid = resolveActiveFamily(families) || getActiveFamilyId();
+      settings = await getSettings(fid).catch(() => null);
+      profiles = normalizeProfiles(await listProfiles(fid).catch(() => []));
 
-    async function openApp(todayTheme) {
-      const families = await listMyFamilies();
-      const fam = await getFamily(activeFid);
-      const mine = families.find(f => f.id === activeFid);
-      const isParent = mine?.role === 'parent';
-      $('family-name').textContent = fam?.name || 'Наш дом';
-      $('role-chip').textContent = isParent ? '👑 Родитель' : '🧒 Ребёнок';
-      $('parent-nav').classList.toggle('hidden', !isParent);
-      $('btn-change-who').classList.toggle('hidden', isParent);
-      $('child-nav').classList.toggle('hidden', isParent);
-      $('join-code').textContent = fam?.joinCode || '——————';
-
-      if (isParent) {
-        const profiles = await listProfiles(activeFid);
-        $('profiles').textContent = profiles.length
-          ? profiles.map(p => `${p.avatar || '🧒'} ${p.name || p.id}`).join('   ')
-          : 'Пока нет — добавь на экране «Дети».';
-      } else {
-        // Ребёнок: валюта общая, коллекция — своя у выбранной темы.
-        const th = theme(todayTheme);
-        const rewards = await getRewards(activeFid, currentUid());
-        const cards = cardsForTheme(rewards, todayTheme);
-        // Два числа рядом: баланс (его тратят) и заработанное за всё время (оно
-        // не убывает) — чтобы покупка не выглядела потерей прогресса.
-        $('profiles').textContent =
-          `${th.currencyEmoji} Можно потратить: ${rewards.currency}   ·   Заработано всего: ${rewards.earnedTotal}   ·   ` +
-          `Карточки ${th.label}: ${cards.length}   ·   Уборок: ${rewards.cleanupsTotal} (${rankForCleanups(rewards.cleanupsTotal)})`;
+      // Планшет помнит, кто на нём убирается: PIN спрашиваем при СМЕНЕ профиля,
+      // а не на каждом открытии приложения — иначе ребёнок утонет в цифрах.
+      const activeId = resolveActiveProfile(profiles);
+      if (activeId && sessionStorage.getItem(THEME_KEY)) {
+        activeProfile = findProfile(profiles, activeId);
+        await openChild(sessionStorage.getItem(THEME_KEY));
+        return;
       }
-      show('screen-app');
+      if (activeId) {
+        activeProfile = findProfile(profiles, activeId);
+        renderWhoChoices();
+        show('screen-who');
+        return;
+      }
+      renderProfiles();
+      show('screen-profiles');
     }
 
     // ── Старт ──
@@ -249,15 +378,9 @@
       try {
         const user = await initAuth();
         if (user && currentUid()) { await afterLogin(); return; }
-        if (hasChildDevice()) {
-          const label = childDeviceLabel();
-          if (label?.avatar) $('child-face').textContent = label.avatar;
-          if (label?.name) $('child-name').textContent = label.name;
-          show('screen-child');
-        } else show('screen-parent');
+        show('screen-login');
       } catch (e) {
-        // Никогда не оставляем белый экран: показываем вход и сообщение об ошибке.
-        show(hasChildDevice() ? 'screen-child' : 'screen-parent');
+        show('screen-login');
         showError(e);
       }
     })();

@@ -67,8 +67,9 @@
   <script type="module">
     import {
       initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
-      getHome, saveHome,
+      getHome, saveHome, getSettings, isParentUnlocked,
     } from './js/store.js';
+    import { parentAreaLocked } from './js/profile-core.js';
     import { parseHome } from './js/ai.js';
     import {
       ROOM_TYPES, roomTypeLabel, roomsInOrder, defaultRouteOrder, moveInArray,
@@ -189,8 +190,10 @@
       if (!user || !currentUid()) { location.href = 'index.html'; return; }
       const families = await listMyFamilies();
       fid = resolveActiveFamily(families) || getActiveFamilyId();
-      const mine = families.find(f => f.id === fid);
-      if (mine?.role !== 'parent') { toast('Только для родителя'); setTimeout(() => location.href = 'index.html', 800); return; }
+      // Родительская часть под кодом: если он задан, а в этой сессии его не
+      // вводили — отправляем на главную, там спросят. Замок от ребёнка, не от взлома.
+      const settings = await getSettings(fid).catch(() => null);
+      if (parentAreaLocked(settings) && !isParentUnlocked()) { location.href = 'index.html'; return; }
       const existing = await getHome(fid);
       if (existing?.floors?.length) {
         home = { floors: existing.floors };

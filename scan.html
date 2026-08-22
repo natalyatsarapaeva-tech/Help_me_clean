@@ -230,7 +230,7 @@
     import {
       initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
       getHome, getProfile, getSettings, getReference, getRewards, saveRewards, saveProgress,
-      listCards,
+      listCards, getActiveProfileId,
     } from './js/store.js';
     import { awardRound, isRoomExhausted, roomsLeft, ROOM_DAILY_LIMIT } from './js/limits-core.js';
     import { scan, verify, reward } from './js/ai.js';
@@ -252,7 +252,7 @@
     const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); };
 
     // ── Состояние экрана ──
-    let fid = null, profileId = null, isParent = false;
+    let fid = null, profileId = null;
     // Награды держим при себе: из них считается дневной лимит по комнатам,
     // и его надо показать ДО уборки, а не «сюрпризом» в конце.
     let myRewards = null;
@@ -628,9 +628,10 @@
       if (!user || !currentUid()) { location.href = 'index.html'; return; }
       const families = await listMyFamilies();
       fid = resolveActiveFamily(families) || getActiveFamilyId();
-      const mine = families.find(f => f.id === fid);
-      isParent = mine?.role === 'parent';
-      profileId = currentUid(); // ребёнок убирает только в своём профиле (правила)
+      // Убирается тот, кого выбрали на экране профилей. Не выбрали — отправляем
+      // выбирать: писать прогресс «в никого» хуже, чем задать вопрос.
+      profileId = getActiveProfileId();
+      if (!profileId) { location.href = 'index.html'; return; }
 
       try { myRewards = await getRewards(fid, profileId); } catch (e) { console.warn('rewards:', e); }
 
@@ -646,10 +647,8 @@
         const home = await getHome(fid);
         const all = roomsInOrder(home || { floors: [] });
         let order = home?.routeOrder || [];
-        if (!isParent) {
-          const prof = await getProfile(fid, profileId).catch(() => null);
-          if (prof?.routeOrder?.length) order = prof.routeOrder;
-        }
+        const prof = await getProfile(fid, profileId).catch(() => null);
+        if (prof?.routeOrder?.length) order = prof.routeOrder; // свой порядок обхода
         const byId = new Map(all.map(r => [r.id, r]));
         rooms = reconcileRouteOrder(order, home || { floors: [] }).map(id => byId.get(id)).filter(Boolean);
         const params = new URLSearchParams(location.search);

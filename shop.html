@@ -65,7 +65,7 @@
   <script type="module">
     import {
       initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
-      listRealRewards, getRewards, saveRewards,
+      listRealRewards, getRewards, saveRewards, getActiveProfileId,
     } from './js/store.js';
     import { theme, FALLBACK_THEME, rankForCleanups } from './js/family-core.js';
     import { shopView, buyReward } from './js/shop-core.js';
@@ -78,7 +78,7 @@
     const th = theme(sessionStorage.getItem('tidy.todayTheme') || FALLBACK_THEME);
     document.documentElement.setAttribute('data-theme', th.id);
 
-    let fid = null, shop = [], rewards = null;
+    let fid = null, profileId = null, shop = [], rewards = null;
 
     function render() {
       const v = shopView(shop, rewards);
@@ -120,7 +120,7 @@
       const res = buyReward(rewards, item);
       if (res.error) { toast(res.error === 'not-enough' ? 'Пока не хватает — убери ещё' : 'Не получилось'); btn.disabled = false; return; }
       try {
-        await saveRewards(fid, currentUid(), res.rewards);
+        await saveRewards(fid, profileId, res.rewards);
         rewards = res.rewards;
         render();
         toast(`«${item.name}» куплено! Покажи родителям.`);
@@ -136,10 +136,12 @@
       if (!user || !currentUid()) { location.href = 'index.html'; return; }
       const families = await listMyFamilies();
       fid = resolveActiveFamily(families) || getActiveFamilyId();
+      profileId = getActiveProfileId();
+      if (!profileId) { location.href = 'index.html'; return; }
       $('theme-chip').textContent = `${th.currencyEmoji} ${th.label}`;
       const [list, r] = await Promise.all([
         listRealRewards(fid).catch(() => []),
-        getRewards(fid, currentUid()).catch(() => null),
+        getRewards(fid, profileId).catch(() => null),
       ]);
       shop = list; rewards = r;
       render();
