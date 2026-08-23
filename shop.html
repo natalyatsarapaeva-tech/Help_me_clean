@@ -15,6 +15,10 @@
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
     .buy-tile { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
     .buy-tile .emoji { font-size: 44px; }
+    /* Фото награды, если родитель его загрузил: настоящее мороженое из
+       соседнего кафе — совсем не то же самое, что 🍦. */
+    .buy-tile .pic { width: 100%; aspect-ratio: 4/3; object-fit: cover; border-radius: 14px; background: var(--line); }
+    .pend-pic { width: 40px; height: 40px; border-radius: 10px; object-fit: cover; vertical-align: middle; }
     .buy-tile .nm { font-weight: 800; font-size: 20px; line-height: 1.2; }
     .buy-tile .btn { width: 100%; min-height: 60px; }
     /* Недоступное не прячем: видно, к чему копить. */
@@ -89,7 +93,8 @@
 
       $('pending-box').classList.toggle('hidden', !v.pending.length);
       $('pending').innerHTML = v.pending.map(p =>
-        `<div>${esc(p.emoji || '🎁')} <strong>${esc(p.name)}</strong> <span class="muted">— куплено, ждём</span></div>`).join('');
+        `<div>${p.url ? `<img class="pend-pic" src="${esc(p.url)}" alt="">` : esc(p.emoji || '🎁')}
+          <strong>${esc(p.name)}</strong> <span class="muted">— куплено, ждём</span></div>`).join('');
 
       $('empty').classList.toggle('hidden', !!v.items.length);
       $('goal').textContent = v.nextGoal
@@ -98,7 +103,9 @@
 
       $('grid').innerHTML = v.items.map(it => `
         <div class="card buy-tile ${it.affordable ? '' : 'locked'}" data-item="${esc(it.id)}">
-          <div class="emoji">${esc(it.emoji)}</div>
+          ${it.url
+            ? `<img class="pic" src="${esc(it.url)}" alt="${esc(it.name)}" loading="lazy">`
+            : `<div class="emoji">${esc(it.emoji)}</div>`}
           <div class="nm">${esc(it.name)}</div>
           <div class="chip">${th.currencyEmoji} ${it.cost}</div>
           ${it.affordable

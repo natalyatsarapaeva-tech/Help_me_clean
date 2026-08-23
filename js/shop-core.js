@@ -21,7 +21,18 @@ export function normalizeRealReward(raw) {
   // недозаполненная награда, и её лучше не показывать вовсе, чем отдавать даром.
   const cost = Math.floor(Number(r.cost));
   if (!id || !name || !Number.isFinite(cost) || cost < 1) return null;
-  return { id, name, cost, emoji: String(r.emoji || '🎁').slice(0, 4), createdAt: r.createdAt || null };
+  return {
+    id, name, cost,
+    // Эмодзи — всегда, даже когда есть фото: пока картинка грузится (или если
+    // файл потерялся), витрине надо что-то показать.
+    emoji: String(r.emoji || '🎁').slice(0, 4),
+    // Фото награды: настоящее мороженое из ближайшего кафе мотивирует сильнее
+    // любого эмодзи. Нет фото — обходимся эмодзи, как раньше.
+    url: String(r.url || '').trim() || null,
+    path: String(r.path || '').trim() || null,
+    w: Number(r.w) || null, h: Number(r.h) || null,
+    createdAt: r.createdAt || null,
+  };
 }
 export function normalizeShop(list) {
   return (Array.isArray(list) ? list : []).map(normalizeRealReward).filter(Boolean)
@@ -52,7 +63,9 @@ export function buyReward(rewards, item, { now = Date.now, rand = Math.random } 
   if (out.currency < it.cost) return { rewards: out, purchase: null, error: 'not-enough' };
   const purchase = {
     id: makePurchaseId(now, rand),
-    rewardId: it.id, name: it.name, emoji: it.emoji, cost: it.cost,
+    // Фото копируем в покупку: родитель увидит в очереди выдачи то же, что
+    // ребёнок выбирал, даже если награду потом убрали с витрины.
+    rewardId: it.id, name: it.name, emoji: it.emoji, url: it.url, cost: it.cost,
     boughtAt: new Date(now()).toISOString(),
     givenAt: null,
   };

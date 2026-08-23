@@ -343,15 +343,35 @@ export async function listRealRewards(fid) {
   const snap = await getDocs(collection(db, 'families', fid, 'realRewards'));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
-export async function saveRealReward(fid, rewardId, data) {
+function rewardPhotoPath(fid, rewardId) { return `families/${fid}/rewards/${rewardId}.jpg`; }
+
+// blob — фото награды (необязательно): настоящее мороженое из соседнего кафе
+// мотивирует сильнее эмодзи. Файл в Storage, ссылка в документе — как у
+// карточек и эталонов. Одна награда — один файл, замена перезаписывает.
+export async function saveRealReward(fid, rewardId, data, blob = null) {
   const doc_ = {
     name: data.name || '', cost: Number(data.cost) || 0, emoji: data.emoji || '🎁',
     byUid: currentUid(), createdAt: data.createdAt || new Date().toISOString(),
   };
+  if (blob) {
+    const path = rewardPhotoPath(fid, rewardId);
+    const fileRef = storageRef(storage, path);
+    await uploadBytes(fileRef, blob, { contentType: 'image/jpeg' });
+    doc_.url = await getDownloadURL(fileRef);
+    doc_.path = path;
+    doc_.w = data.w || null;
+    doc_.h = data.h || null;
+  }
   await setDoc(doc(db, 'families', fid, 'realRewards', rewardId), doc_, { merge: true });
   return { id: rewardId, ...doc_ };
 }
+// Убрали награду с витрины — уносим и файл: место в Storage платное, а
+// ссылка на него больше ниоткуда не читается. Уже купленное у детей остаётся
+// (там своя копия названия и ссылки), но картинка пропадёт — это честно:
+// награды больше нет.
 export async function deleteRealReward(fid, rewardId) {
+  try { await deleteObject(storageRef(storage, rewardPhotoPath(fid, rewardId))); }
+  catch (e) { if (e?.code !== 'storage/object-not-found') throw e; }
   await deleteDoc(doc(db, 'families', fid, 'realRewards', rewardId));
 }
 

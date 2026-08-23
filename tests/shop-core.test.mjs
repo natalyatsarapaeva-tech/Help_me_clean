@@ -204,3 +204,29 @@ test('счётчики переживают нормализацию докум�
   assert.equal(roomCount(roundTrip, 'bath', at(DAY1)), 1);
   assert.equal(placeCount(normalizeRewards({ dailyRooms: { day: '2026-08-22', places: { 'bath::раковина': 'ерунда' } } }), 'bath', 'раковина', at(DAY1)), 0);
 });
+
+
+// ── Фото награды ────────────────────────────────────────────────────────────
+test('у награды может быть фото; эмодзи остаётся запасным', () => {
+  const withPic = normalizeRealReward({
+    id: 'ice', name: 'Мороженое', cost: 12, emoji: '🍦',
+    url: 'https://example/ice.jpg', path: 'families/f1/rewards/ice.jpg', w: 900, h: 675,
+  });
+  assert.equal(withPic.url, 'https://example/ice.jpg');
+  assert.equal(withPic.path, 'families/f1/rewards/ice.jpg');
+  assert.deepEqual([withPic.w, withPic.h], [900, 675]);
+  assert.equal(withPic.emoji, '🍦', 'эмодзи нужен, пока картинка грузится');
+
+  const noPic = normalizeRealReward({ id: 'kino', name: 'Кино', cost: 30 });
+  assert.equal(noPic.url, null, 'нет фото — не выдумываем пустую строку');
+  assert.equal(noPic.emoji, '🎁');
+  // Мусор в поле ссылки не должен превращаться в битую картинку.
+  assert.equal(normalizeRealReward({ id: 'x', name: 'X', cost: 1, url: '   ' }).url, null);
+});
+
+test('покупка уносит фото с собой — родитель видит в очереди то же, что ребёнок', () => {
+  const item = { id: 'ice', name: 'Мороженое', cost: 5, emoji: '🍦', url: 'https://example/ice.jpg' };
+  const res = buyReward({ ...emptyRewards(), currency: 10 }, item, { now: () => 0, rand: () => 0 });
+  assert.equal(res.purchase.url, 'https://example/ice.jpg');
+  assert.equal(pendingPurchases(res.rewards)[0].url, 'https://example/ice.jpg');
+});
