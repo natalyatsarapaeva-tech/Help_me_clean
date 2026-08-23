@@ -245,6 +245,7 @@
           <div><div class="counter" id="done-time">0:00</div><div class="muted">на уборку</div></div>
           <div><div class="counter" id="done-items">0</div><div class="muted">убрано вещей</div></div>
         </div>
+        <div id="done-note" class="muted hidden"></div>
         <div id="done-extra" class="muted"></div>
         <div id="limit-note" class="muted hidden"></div>
       </div>
@@ -319,7 +320,10 @@
     import { scan, verify, reward, checkBonus } from './js/ai.js';
     import { startCamera, stopCamera, cameraErrorText } from './js/camera.js';
     import { prepareScanFrame, revokeFrame } from './js/image.js';
-    import { theme, roomsInOrder, reconcileRouteOrder, FALLBACK_THEME, addCard, cardsForTheme } from './js/family-core.js';
+    import {
+      theme, roomsInOrder, reconcileRouteOrder, FALLBACK_THEME, addCard, cardsForTheme,
+      missedPhrase, VERIFY_LIMITS,
+    } from './js/family-core.js';
     import { pickCard } from './js/cards-core.js';
     import { pickBonus, awardBonus, bonusesLeftToday } from './js/bonus-core.js';
     import {
@@ -697,12 +701,15 @@
         await goVerify();
         return;
       }
-      if (!result.done && result.missed.length) {
-        // §296: называем ОДНУ вещь, а не список, и даём переснять.
-        $('after-title').textContent = `Почти! Осталось: ${result.missed[0]}`;
-        $('after-sub').textContent = 'Убери — и сними ещё раз, я посмотрю.';
+      if (!result.done && result.left.length) {
+        // Мягко по форме, конкретно по содержанию: ребёнок должен видеть, сколько
+        // именно осталось. «Осталось: носок» на заваленном столе звучало как
+        // придирка и не давало понять, доделывать минуту или десять.
+        const phrase = missedPhrase(result.left);
+        $('after-title').textContent = result.praise || 'Да ты почти у цели!';
+        $('after-sub').textContent = `Осталось только ${phrase}. Убери — и сними ещё раз, я посмотрю.`;
         show('step-after');
-        say(`Почти! Осталось убрать: ${result.missed[0]}`);
+        say(`${result.praise || 'Да ты почти у цели!'} Осталось только ${phrase}`);
         await openCamera($('video2'), $('cam-fallback2'));
         return;
       }
@@ -716,6 +723,11 @@
       round = finishRound(round, verifyResult);
       const p = roundProgress(round);
       $('done-praise').textContent = verifyResult?.praise || th.praiseWord;
+      // Бонус за комнату — только за убранную по планке. Молча его не отнимаем:
+      // ребёнок должен понимать, почему в этот раз искорок меньше.
+      $('done-note').textContent = verifyResult?.done === true ? ''
+        : `Бонус за комнату — за полностью убранную: без мусора и не больше ${VERIFY_LIMITS.others} лишних вещей. Искорки за шаги остаются с тобой.`;
+      $('done-note').classList.toggle('hidden', verifyResult?.done === true);
       $('done-sparkles').textContent = round.sparkles;
       $('limit-note').classList.add('hidden');
       $('done-currency').textContent = `${th.currencyEmoji} за эту уборку`;
@@ -936,7 +948,23 @@
       $('bonus-offer').classList.add('hidden'); bonus = null;
       if (rooms.length > 1) { renderRooms(); show('step-room'); renderHeader(); } else goMode();
     };
-    $('btn-exit').onclick = () => { stopCamera(); stopTimer(); setBusy(false); };
+    // Проверку теперь не пропустить, и уйти с недоубранной комнаты — законный
+    // выход. Но заработанное за шаги ребёнок отработал: искорки сохраняем,
+    // бонус за комнату, карточку и счётчик уборок — нет.
+    $('btn-exit').onclick = async (e) => {
+      stopCamera(); stopTimer(); setBusy(false);
+      if (!round || round.finishedAt || !totalSparkles(round)) return;
+      e.preventDefault();
+      toast('Сохраняю искорки…');
+      try {
+        if (isCloseupOpen(round)) round = finishCloseup(round);
+        round = finishRound(round, { done: false, status: 'left', praise: '', missed: [] });
+        await saveProgress(fid, profileId, sessionFromRound(round));
+        const rewards = await getRewards(fid, profileId);
+        await saveRewards(fid, profileId, awardRound(rewards, round).rewards);
+      } catch (err) { console.error('exit save:', err); }
+      location.href = 'index.html';
+    };
 
     // ── Выбор режима ──
     document.querySelectorAll('[data-mode]').forEach(el => {

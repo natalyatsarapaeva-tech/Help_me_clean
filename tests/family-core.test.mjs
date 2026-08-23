@@ -13,6 +13,7 @@ import {
   cornersToXywh, parseJsonObject, parseJsonArray, stripJsonFences,
   sanitizeScan, sanitizeVerify, sanitizeHome, ZONE_IDS, zoneKind, normalizeZoneKind, zoneNeedsCloseup, clampPoint,
   roomTypeLabel, roomsInOrder, defaultRouteOrder, moveInArray, reconcileRouteOrder,
+  VERIFY_LIMITS, missedPhrase,
   referenceCoverage,
 } from '../js/family-core.js';
 
@@ -110,12 +111,48 @@ test('sanitizeScan closeup: отбрасывает неизвестные кат
   assert.equal(paper.instruction, actionCategory('paper').instruction);
 });
 
-test('sanitizeVerify: мягкая оценка, одна пропущенная вещь, person/retake', () => {
+test('sanitizeVerify: планку держит код, а не настроение модели', () => {
   assert.equal(sanitizeVerify({ done: true, score: 'great', praise: 'Чисто!' }).status, 'done');
-  const inc = sanitizeVerify({ done: false, missed: ['носок', 'книга', 'кружка'] });
-  assert.equal(inc.missed.length, 1); // §296 — одна вещь, не список
   assert.equal(sanitizeVerify({ person_detected: true }).status, 'person');
   assert.equal(sanitizeVerify({ retake: true }).status, 'retake');
+
+  // Мусор не прощается вообще — даже одна бумажка.
+  const trash = sanitizeVerify({ done: true, left: [
+    { label: 'бумажка', count: 1, category: 'trash', todo: 'выбросить бумажку' },
+  ] });
+  assert.equal(trash.done, false, 'модель сказала «убрано», а фантик на столе лежит');
+  assert.equal(trash.trashLeft, 1);
+
+  // Три посторонние вещи — допуск, четыре — уже неубранная поверхность.
+  const three = sanitizeVerify({ done: false, left: [
+    { label: 'книга', count: 2, category: 'belongs_elsewhere' },
+    { label: 'кружка', count: 1, category: 'dishes' },
+  ] });
+  assert.equal(three.done, true, 'придираться к забытой кружке нельзя');
+  assert.equal(three.othersLeft, 3);
+  const four = sanitizeVerify({ done: false, left: [{ label: 'книги', count: 4, category: 'paper' }] });
+  assert.equal(four.done, false);
+  assert.equal(four.othersLeft, 4);
+
+  // Списка нет — сказать ребёнку нечего, верим слову модели.
+  assert.equal(sanitizeVerify({ done: true, left: [] }).done, true);
+  assert.equal(sanitizeVerify({ done: false }).done, false);
+  assert.deepEqual(VERIFY_LIMITS, { trash: 0, others: 3 });
+});
+
+test('фраза «осталось только…» — конкретная, но не придирка', () => {
+  const v = sanitizeVerify({ left: [
+    { label: 'бумажки', count: 3, category: 'trash', todo: 'выбросить три бумажки' },
+    { label: 'кружка', count: 1, category: 'dishes', todo: 'отнести посуду на место' },
+  ], praise: 'Да ты почти у цели!' });
+  assert.equal(missedPhrase(v.left), 'выбросить три бумажки и отнести посуду на место');
+  assert.equal(v.done, false, 'мусор остался');
+  assert.deepEqual(v.missed, ['выбросить три бумажки', 'отнести посуду на место']);
+  // Модель не дала готовую фразу — обходимся названием, а не молчим.
+  assert.equal(missedPhrase([{ label: 'носки', count: 2 }]), 'убрать: носки');
+  assert.equal(missedPhrase([]), '');
+  assert.equal(missedPhrase([{ todo: 'а' }, { todo: 'б' }, { todo: 'в' }, { todo: 'г' }]), 'а, б и в',
+    'больше трёх дел за раз ребёнку не удержать');
 });
 
 test('награды: валюта общая на ребёнка, коллекции — по темам', () => {

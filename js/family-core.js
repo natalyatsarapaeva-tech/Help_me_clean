@@ -80,6 +80,20 @@ export const TIDY_STANDARD = [
 ];
 export const TIDY_STANDARD_TEXT = TIDY_STANDARD.map(s => `- ${s}`).join('\n');
 
+// Планка проверки «после»: по ней решается, засчитана уборка или нет.
+// Требования были размытые («убрано большинство»), и один и тот же стол
+// засчитывался то так, то эдак. Теперь считаем: мусора на поверхности не
+// остаётся ВООБЩЕ, прочих посторонних предметов — не больше трёх суммарно.
+// Тройка — не придирка, а допуск: одна забытая кружка и книжка уборку не
+// отменяют, а вот пять предметов — это уже неубранный стол.
+export const VERIFY_LIMITS = { trash: 0, others: 3 };
+export const VERIFY_LIMITS_TEXT = [
+  `Мусора (фантики, бумажки, упаковки, огрызки) на поверхности не должно остаться НИ ОДНОГО.`,
+  `Прочих посторонних предметов — не больше ${VERIFY_LIMITS.others} суммарно на всю поверхность.`,
+  'Считается пол, стол, тумбочка, подоконник, столешница в кухне и ванной.',
+  'Мебель, техника, настольная лампа и ОДНА стопка бумаг на письменном столе — это норма, их не считай.',
+].map(s => `- ${s}`).join('\n');
+
 // ── Цветовой словарь действий (§232, фиксированный — модель НЕ выдумывает) ───
 // Единственное, что тема НЕ перекрашивает (§371). category — из закрытого списка.
 export const ACTION_CATEGORIES = [
@@ -439,16 +453,55 @@ export function sanitizeBonus(raw) {
 export const VERIFY_SCORES = ['great', 'good', 'ok'];
 export function sanitizeVerify(raw) {
   const r = (raw && typeof raw === 'object') ? raw : {};
-  if (r.person_detected === true) return { done: false, status: 'person', praise: '', missed: [] };
-  if (r.retake === true || r.status === 'retake') return { done: false, status: 'retake', praise: '', missed: [] };
+  if (r.person_detected === true) return { ...EMPTY_VERIFY, status: 'person' };
+  if (r.retake === true || r.status === 'retake') return { ...EMPTY_VERIFY, status: 'retake' };
+  // Что осталось на поверхности — списком с количеством. Раньше просили ОДНУ
+  // вещь (§296), но «осталось: носок» на заваленном столе звучало как придирка
+  // и не показывало ребёнку, сколько ещё работы. Теперь называем всё, что
+  // мешает, — коротко и с числом.
+  const left = (Array.isArray(r.left) ? r.left : []).slice(0, 4).map(x => ({
+    label: String(x?.label || '').trim(),
+    count: Math.max(1, Math.round(Number(x?.count) || 1)),
+    category: isValidActionCategory(x?.category) ? normalizeActionCategory(x.category) : null,
+    // Готовая фраза от модели: русские падежи и числительные она согласует
+    // лучше любого нашего шаблона («выбросить три бумажки»).
+    todo: String(x?.todo || '').trim(),
+  })).filter(x => x.label || x.todo);
+  const isTrash = (x) => x.category === 'trash' || x.category === 'bin_full';
+  const trashLeft = left.filter(isTrash).reduce((n, x) => n + x.count, 0);
+  const othersLeft = left.filter(x => !isTrash(x)).reduce((n, x) => n + x.count, 0);
+  // Норма живёт В КОДЕ, а не в настроении модели: одна и та же комната должна
+  // засчитываться одинаково в понедельник и в пятницу. Модель только считает,
+  // что осталось; проходной балл ставим мы. Списка нет — верим её «done»:
+  // сказать ребёнку всё равно нечего, а придираться вслепую нельзя.
+  const done = left.length
+    ? (trashLeft <= VERIFY_LIMITS.trash && othersLeft <= VERIFY_LIMITS.others)
+    : r.done === true;
   return {
-    done: r.done === true,
-    status: r.done === true ? 'done' : 'incomplete',
+    done,
+    status: done ? 'done' : 'incomplete',
     score: VERIFY_SCORES.includes(r.score) ? r.score : 'ok',
     praise: String(r.praise || '').trim(),
-    // §296: при done:false называть ОДНУ вещь, не список.
-    missed: Array.isArray(r.missed) ? r.missed.slice(0, 1).map(String) : [],
+    left, trashLeft, othersLeft,
+    // Совместимость с прежним полем: что именно осталось сделать.
+    missed: left.map(x => x.todo || x.label).filter(Boolean),
   };
+}
+const EMPTY_VERIFY = {
+  done: false, status: 'incomplete', score: 'ok', praise: '',
+  left: [], trashLeft: 0, othersLeft: 0, missed: [],
+};
+
+// «Осталось только выбросить три бумажки и отнести посуду на место».
+// Мягко по форме, конкретно по содержанию: ребёнок должен понимать, сколько
+// именно осталось, иначе «почти получилось» звучит как отказ без объяснения.
+export function missedPhrase(left, limit = 3) {
+  const parts = (Array.isArray(left) ? left : [])
+    .map(x => (typeof x === 'string' ? x : (x?.todo || (x?.label ? `убрать: ${x.label}` : ''))))
+    .filter(Boolean).slice(0, limit);
+  if (!parts.length) return '';
+  if (parts.length === 1) return parts[0];
+  return `${parts.slice(0, -1).join(', ')} и ${parts[parts.length - 1]}`;
 }
 
 // Санитайзинг ответа /parse-home (§188): этажи → комнаты с валидным типом.

@@ -44,8 +44,11 @@
         <input id="new-emoji" class="field" value="🍦" maxlength="4" style="text-align:center">
         <input id="new-name" class="field" placeholder="Например, «Мороженое»" maxlength="40">
         <input id="new-cost" class="field" type="number" min="1" step="1" placeholder="Цена ✨">
-        <button id="btn-add" class="btn btn-primary">Добавить</button>
+        <button id="btn-add" class="btn btn-primary" disabled>Загружаю…</button>
       </div>
+      <!-- Что именно пошло не так: «не удалось сохранить» родителю ничего не
+           говорит, а причина почти всегда одна и чинится за минуту. -->
+      <div id="err" class="card hidden" style="border:2px solid #E53935;font-size:14px"></div>
       <div class="muted" style="font-size:14px">
         Ориентир: уборка комнаты с проверкой — примерно 8–12 искорок.
         Ставьте цены так, чтобы ближняя награда бралась за 2–3 уборки, а крупная — за неделю.
@@ -70,6 +73,28 @@
     const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); };
 
     let fid = null, shop = [], children = [];
+    // Форма живёт с момента загрузки разметки, а fid приезжает после трёх
+    // запросов в сеть. Родитель успевал вписать награду и нажать «Добавить»
+    // раньше — и запись уходила в families/null: Firestore отвечал ошибкой,
+    // а экран показывал безликое «Не удалось сохранить» и пустую витрину.
+    let ready = false;
+    function setReady(on) {
+      ready = on;
+      $('btn-add').disabled = !on;
+      $('btn-add').textContent = on ? 'Добавить' : 'Загружаю…';
+    }
+
+    // Ошибку показываем как есть: код Firestore — единственное, по чему
+    // понятно, чинить правила, связь или что-то третье.
+    function showError(where, e) {
+      const code = e?.code || e?.name || '';
+      const hint = code === 'permission-denied'
+        ? 'Похоже, правила Firestore не переопубликованы после появления витрины наград. Firebase Console → Firestore Database → Rules → вставить firestore.rules из репозитория → Publish.'
+        : (code === 'unavailable' ? 'Нет связи с базой — проверьте интернет.' : '');
+      $('err').innerHTML = `<strong>${esc(where)}</strong><br>${esc(code || 'ошибка')}: ${esc(e?.message || e)}${hint ? `<br><br>${esc(hint)}` : ''}`;
+      $('err').classList.remove('hidden');
+    }
+    const clearError = () => $('err').classList.add('hidden');
 
     function renderShop() {
       const items = normalizeShop(shop);
@@ -89,7 +114,7 @@
             shop = shop.filter(x => x.id !== id);
             renderShop();
             toast('Убрано с витрины');
-          } catch (e) { console.error(e); toast('Не удалось убрать'); }
+          } catch (e) { console.error(e); toast('Не удалось убрать'); showError('Не удалось убрать награду', e); }
         };
       });
     }
@@ -120,12 +145,18 @@
             entry.rewards = next;
             renderQueue();
             toast('Отмечено как выданное');
-          } catch (e) { console.error(e); toast('Не удалось отметить'); el.querySelector('.give').disabled = false; }
+          } catch (e) {
+            console.error(e); toast('Не удалось отметить');
+            showError('Не удалось отметить выдачу', e);
+            el.querySelector('.give').disabled = false;
+          }
         };
       });
     }
 
     $('btn-add').onclick = async () => {
+      if (!ready || !fid) { toast('Секунду, страница ещё загружается'); return; }
+      clearError();
       const name = $('new-name').value.trim();
       const cost = parseInt($('new-cost').value, 10);
       const emoji = $('new-emoji').value.trim() || '🎁';
@@ -138,7 +169,7 @@
         $('new-name').value = ''; $('new-cost').value = ''; $('new-emoji').value = '🎁';
         renderShop();
         toast('Награда добавлена');
-      } catch (e) { console.error(e); toast('Не удалось сохранить'); }
+      } catch (e) { console.error(e); toast('Не удалось сохранить'); showError('Награда не сохранилась', e); }
       finally { $('btn-add').disabled = false; }
     };
 
@@ -148,14 +179,18 @@
       if (!user || !currentUid()) { location.href = 'index.html'; return; }
       const families = await listMyFamilies();
       fid = resolveActiveFamily(families) || getActiveFamilyId();
+      if (!fid) { showError('Семья не найдена', { code: 'no-family', message: 'Не удалось определить семью — зайдите на главную и войдите заново.' }); return; }
       // Родительская часть под кодом: если он задан, а в этой сессии его не
       // вводили — отправляем на главную, там спросят. Замок от ребёнка, не от взлома.
       const settings = await getSettings(fid).catch(() => null);
       if (parentAreaLocked(settings) && !isParentUnlocked()) { location.href = 'index.html'; return; }
-      try { shop = await listRealRewards(fid); } catch (e) { console.warn('shop:', e); }
+      // Витрина, которая не прочиталась, и витрина пустая — разные вещи:
+      // молчаливое «пока пусто» отправляло чинить не то.
+      try { shop = await listRealRewards(fid); } catch (e) { console.warn('shop:', e); showError('Витрина не загрузилась', e); }
       renderShop();
       try { children = await listAllRewards(fid); } catch (e) { console.warn('children:', e); }
       renderQueue();
+      setReady(true);
     })();
   </script>
   <script src="pwa.js"></script>
