@@ -7,7 +7,7 @@
 // Санитайзеры (sanitizeScan/Verify/Home) — в family-core.js (чистые, тестируемые).
 import {
   ACTION_CATEGORIES, ACTION_IDS, ROOM_TYPES, roomTypeLabel, TIDY_STANDARD_TEXT,
-  VERIFY_LIMITS_TEXT,
+  VERIFY_LIMITS_TEXT, SEEN_TAGS_TEXT,
   sanitizeScan, sanitizeVerify, sanitizeBonus, sanitizeHome, parseJsonObject,
 } from './family-core.js';
 
@@ -96,6 +96,12 @@ const LABEL_RULE = `- label — как вещь назвал бы ребёнок
 // Норма порядка — общая для сканера и проверки (family-core.TIDY_STANDARD).
 const standard = () => `Что считается убранным:\n${TIDY_STANDARD_TEXT}`;
 
+// Контекст для бонусных заданий: «полей цветок» имеет смысл там, где цветок
+// есть. Спрашиваем тем же вызовом, что ищет работу, — отдельный вызов ИИ ради
+// одного списка не окупается.
+const seenRule = () => `- seen — что ЕЩЁ есть в кадре из этого списка (ничего из списка нет — пустой список):
+${SEEN_TAGS_TEXT}`;
+
 // Место в кадре — ключ дневного лимита: одна и та же раковина не должна
 // приносить награду бесконечно, но другой угол той же комнаты — должен.
 const placeRule = (surfaces) => `- place — КОРОТКОЕ название места, которое снято
@@ -109,7 +115,7 @@ function scanSystem(mode, surfaces) {
   const places = placeRule(surfaces);
   if (mode === 'overview') {
     return `Ты помощник по уборке. На фото — комната целиком. Раздели работу на ОЧАГИ беспорядка (зоны) — так, как их назвал бы человек, зашедший в комнату: «одежда на стуле», «коробки на полу», «стол завален», «полная урна». НЕ перечисляй отдельные вещи: очаг — это место, а не предмет. Верни ТОЛЬКО JSON:
-{"mode":"overview","place":"детская","zones":[{"id":1,"kind":"chair","label":"одежда на стуле","point":[0.22,0.55],"category":"textile","action":"убери одежду со стула","items_estimate":3,"needs_closeup":false},{"id":2,"kind":"desk","label":"письменный стол","point":[0.61,0.42],"category":"paper","action":"наведи порядок на столе","items_estimate":9,"needs_closeup":true}],"estimated_minutes":12}
+{"mode":"overview","place":"детская","zones":[{"id":1,"kind":"chair","label":"одежда на стуле","point":[0.22,0.55],"category":"textile","action":"убери одежду со стула","items_estimate":3,"needs_closeup":false},{"id":2,"kind":"desk","label":"письменный стол","point":[0.61,0.42],"category":"paper","action":"наведи порядок на столе","items_estimate":9,"needs_closeup":true}],"seen":["plant"],"estimated_minutes":12}
 
 ${standard()}
 
@@ -123,12 +129,13 @@ ${dict}
 - items_estimate — сколько примерно вещей в этом очаге (числом).
 ${places}
 - point — [x,y] центра очага в долях кадра 0..1 (x слева направо, y сверху вниз).
+${seenRule()}
 - needs_closeup — true, если с этой точки ВИДНО, что там беспорядок, но НЕ РАЗГЛЯДЕТЬ, что именно: мелочь на столе, заваленная полка. Тогда ребёнок подойдёт и снимет крупным планом. Для стула с одеждой, коробок на полу, кровати и урны — false: там и так всё понятно.
 - estimated_minutes — сколько примерно минут займёт вся комната.
 - Если человек в кадре — верни {"person_detected":true}.`;
   }
   return `Ты помощник по уборке. На фото — стол/полка/поверхность крупным планом. Найди ВСЁ, что мешает поверхности быть убранной по норме ниже, и отнеси каждый предмет к ОДНОЙ категории действия. Верни ТОЛЬКО JSON:
-{"mode":"closeup","place":"раковина","items":[{"id":1,"label":"тетрадь","category":"paper","box":[0.12,0.34,0.28,0.51],"confidence":0.86}],"surface_state":"messy"}
+{"mode":"closeup","place":"раковина","items":[{"id":1,"label":"тетрадь","category":"paper","box":[0.12,0.34,0.28,0.51],"confidence":0.86}],"seen":["plant"],"surface_state":"messy"}
 
 ${standard()}
 
@@ -139,6 +146,7 @@ ${LABEL_RULE}
 ${places}
 - box — прямоугольник вокруг предмета в НОРМАЛИЗОВАННЫХ углах [x1,y1,x2,y2] (верхний-левый и нижний-правый), каждое число 0..1.
 - Не выдумывай предметов, которых нет. Один предмет — один объект.
+${seenRule()}
 - Если человек в кадре — верни {"person_detected":true}.`;
 }
 

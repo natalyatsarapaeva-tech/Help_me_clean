@@ -130,6 +130,30 @@ export function normalizeActionCategory(id) {
 export function actionCategory(id) { return ACTION_BY_ID.get(normalizeActionCategory(id)) || null; }
 export function isValidActionCategory(id) { return ACTION_BY_ID.has(normalizeActionCategory(id)); }
 
+// ── Контекст кадра: за что вообще можно предложить бонус ────────────────────
+// Бонусные задания раньше выбирались по типу комнаты: в детской могло выпасть
+// «полей цветок» там, где цветка нет, и «протри стол тряпочкой» после уборки
+// пола. Задание, не связанное с тем, что ребёнок только что делал, читается
+// как случайная придирка и обесценивает саму идею бонуса.
+//
+// Поэтому у бонуса теперь два вида требований:
+//   seen    — что ВИДНО в кадре. Называет сканер тем же вызовом, что ищет работу
+//             (лишний вызов ИИ на это тратить незачем).
+//   cleaned — что ребёнок ТОЛЬКО ЧТО убрал. Выводим сами из закрытых шагов
+//             раунда (round-core.roundContextTags) — модели тут верить не в чем.
+export const SEEN_TAGS = ['plant', 'mirror', 'shoes', 'books'];
+export const SEEN_TAGS_TEXT = [
+  'plant — комнатное растение в горшке',
+  'mirror — зеркало',
+  'shoes — обувь на полу или на полке',
+  'books — книги на полке или стопкой',
+].map(s => `  ${s}`).join('\n');
+export const CLEANED_TAGS = ['surface', 'floor', 'textile', 'bed', 'trash', 'wiped'];
+export function normalizeTags(list, allowed) {
+  const ok = new Set(allowed);
+  return [...new Set((Array.isArray(list) ? list : []).map(String).filter(t => ok.has(t)))];
+}
+
 // ── Очаги беспорядка: зоны комнаты (режим «фото комнаты», §268) ─────────────
 // В обходе комнаты шаг — не отдельная вещь, а ОЧАГ: стул с одеждой, пол,
 // стол, полка, урна. Так и рассуждает человек, который заходит в комнату:
@@ -382,6 +406,8 @@ export function sanitizeScan(raw) {
       mode, zones,
       place: cleanPlace(r.place),
       estimated_minutes: Number(r.estimated_minutes) || null,
+      // Что ещё есть в кадре — для контекстных бонусов, см. SEEN_TAGS.
+      seen: normalizeTags(r.seen, SEEN_TAGS),
     };
   }
   const items = (Array.isArray(r.items) ? r.items : [])
@@ -403,7 +429,11 @@ export function sanitizeScan(raw) {
     .map(cat => ({ category: cat, count: items.filter(it => it.category === cat).length }))
     .filter(g => g.count > 0)
     .map(g => ({ ...g, instruction: actionCategory(g.category).instruction }));
-  return { mode, items, groups, place: cleanPlace(r.place), surface_state: r.surface_state === 'clean' ? 'clean' : 'messy' };
+  return {
+    mode, items, groups, place: cleanPlace(r.place),
+    surface_state: r.surface_state === 'clean' ? 'clean' : 'messy',
+    seen: normalizeTags(r.seen, SEEN_TAGS),
+  };
 }
 
 // «Место» в кадре — что именно сняли: раковина, стол у окна, пол у двери.

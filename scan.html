@@ -331,6 +331,7 @@
       isFinished, roundProgress, roundTaskText, finishRound, elapsedMs, formatDuration,
       sessionFromRound, roundBrief, zoneMarkers, activeRound, isCloseupOpen, dropItem,
       isStepEmpty, startCloseup, finishCloseup, cancelCloseup, totalSparkles, currentZone,
+      roundContextTags,
     } from './js/round-core.js';
 
     const $ = id => document.getElementById(id);
@@ -786,8 +787,12 @@
     // ── Бонусные задания ──
     // Предлагаем только после уборки, за которую начислили: иначе «сфоткай руку»
     // стало бы способом получать искорки вместо уборки.
+    // Задание должно продолжать то, что ребёнок только что делал: тряпочку —
+    // после уборки стола, лейку — если в кадре был цветок. Не нашлось ничего
+    // подходящего — не предлагаем ничего: задание невпопад хуже паузы.
     function offerBonus(awarded) {
-      bonus = awarded ? pickBonus(myRewards, room?.type, { rand: Math.random }) : null;
+      const ctx = { roomType: room?.type, ...roundContextTags(round) };
+      bonus = awarded ? pickBonus(myRewards, ctx, { rand: Math.random }) : null;
       $('bonus-offer').classList.toggle('hidden', !bonus);
       if (!bonus) return;
       $('bonus-emoji').textContent = bonus.emoji;

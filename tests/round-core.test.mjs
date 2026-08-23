@@ -8,7 +8,7 @@ import {
   applyRoundToRewards, sessionFromRound,
   ZONE_ORDER, zoneOrderIndex, zoneMarkers, roundBrief, currentZone, needsCloseup,
   startCloseup, finishCloseup, cancelCloseup, isCloseupOpen, totalSparkles, activeRound,
-  dropItem, isItemDropped, isStepEmpty,
+  dropItem, isItemDropped, isStepEmpty, roundContextTags,
 } from '../js/round-core.js';
 import { ACTION_IDS, SPARKLES, ZONE_IDS, emptyRewards, sanitizeScan } from '../js/family-core.js';
 
@@ -496,4 +496,41 @@ test('вычёркивание работает и внутри крупного
   assert.equal(r.sub.droppedItemIds.length, 1, 'вычеркнули внутри очага, а не в комнате');
   assert.deepEqual(r.droppedItemIds, []);
   assert.equal(stepTask(r).total, 1);
+});
+
+
+// ── Контекст раунда для бонусных заданий ────────────────────────────────────
+test('контекст берётся из ЗАКРЫТЫХ шагов, а не из того, что было в комнате', () => {
+  let r = room0(); // стул → пол → стол → протереть → урна
+  assert.deepEqual(roundContextTags(r).cleaned, [], 'ничего не закрыто — предлагать нечего');
+  r = completeStep(r, { now: fixed(1) });                       // стул с одеждой
+  assert.deepEqual(roundContextTags(r).cleaned, ['textile']);
+  r = skipStep(r, { now: fixed(2) });                           // пол пропущен
+  assert.deepEqual(roundContextTags(r).cleaned, ['textile'],
+    'пропущенный шаг в контекст не идёт: ребёнок его не убирал');
+  r = completeStep(r, { now: fixed(3) });                       // стол
+  assert.ok(roundContextTags(r).cleaned.includes('surface'));
+  r = completeStep(r, { now: fixed(4) });                       // протереть
+  assert.ok(roundContextTags(r).cleaned.includes('wiped'), 'протёртый стол помечен');
+  r = completeStep(r, { now: fixed(5) });                       // урна
+  assert.ok(roundContextTags(r).cleaned.includes('trash'));
+});
+
+test('на крупном плане закрытый цвет означает разобранную поверхность', () => {
+  let r = round0();
+  r = completeStep(r, { now: fixed(1) });
+  assert.deepEqual(roundContextTags(r).cleaned, ['surface', 'trash'],
+    'сняли стол и убрали мусор — и то и другое');
+});
+
+test('увиденное сканером едет в раунд, крупный план его дополняет', () => {
+  const r = buildRound(sanitizeScan({ mode: 'overview', seen: ['plant', 'ufo'], zones: [
+    { id: 1, kind: 'desk', label: 'стол', point: [0.5, 0.5], category: 'paper', items_estimate: 9 },
+  ] }), { now: fixed(0), rand: () => 0 });
+  assert.deepEqual(roundContextTags(r).seen, ['plant'], 'выдуманные метки отброшены');
+  // Цветок на подоконнике видно только вблизи — крупный план его находит.
+  const withSub = startCloseup(r, sanitizeScan({ mode: 'closeup', seen: ['books'], items: [
+    { id: 1, label: 'тетрадь', category: 'paper', box: [0.1, 0.1, 0.2, 0.2] },
+  ] }), { now: fixed(1), rand: () => 0 });
+  assert.deepEqual(roundContextTags(withSub).seen.sort(), ['books', 'plant']);
 });

@@ -16,6 +16,7 @@
 import {
   ACTION_IDS, actionCategory, normalizeActionCategory, makeSessionId,
   zoneKind, normalizeZoneKind, SPARKLES, normalizeRewards, nextSurpriseIn, shouldSurprise,
+  SEEN_TAGS, normalizeTags,
 } from './family-core.js';
 
 // ── Порядок цветов в раунде (режим A) ───────────────────────────────────────
@@ -97,6 +98,8 @@ export function buildRound(scanned, {
     mode: overview ? 'overview' : 'closeup',
     // Что именно сняли («раковина», «стол у окна») — ключ дневного лимита.
     place: scanned?.place || '',
+    // Что ещё попало в кадр (цветок, зеркало, книги) — для контекстных бонусов.
+    seen: normalizeTags(scanned?.seen, SEEN_TAGS),
     estimatedMinutes: overview ? (Number(scanned?.estimated_minutes) || null) : null,
     roomId, roomName, themeId, profileId,
     startedAt: new Date(now()).toISOString(),
@@ -185,8 +188,11 @@ export function startCloseup(round, scanned, { now = Date.now, rand = Math.rando
     roomId: round.roomId, roomName: round.roomName, themeId: round.themeId,
     profileId: round.profileId, now, rand, id: `${round.id}-z${zone.id}`,
   });
-  if (!sub.steps.length) return round;
-  return { ...round, sub: { ...sub, zoneId: zone.id, zoneLabel: zone.label } };
+  // Цветок на столе видно только вблизи — увиденное крупным планом
+  // засчитываем комнате, даже если ребёнок откажется от вложенного раунда.
+  const seen = [...new Set([...(round.seen || []), ...(sub.seen || [])])];
+  if (!sub.steps.length) return { ...round, seen };
+  return { ...round, seen, sub: { ...sub, zoneId: zone.id, zoneLabel: zone.label } };
 }
 // Крупный план отработан: искорки уезжают в общий счёт раунда, очаг закрывается.
 export function finishCloseup(round, { now = Date.now, rand = Math.random } = {}) {
@@ -403,6 +409,40 @@ export function zoneMarkers(round) {
       needsCloseup: !!z.needsCloseup,
     };
   });
+}
+
+// ── Контекст раунда: за что можно предложить бонус ──────────────────────────
+// Бонус должен продолжать то, что ребёнок ТОЛЬКО ЧТО делал: тряпочку — после
+// уборки стола, веник — после пола, «отнеси в стирку» — после вещей со стула.
+// Поэтому считаем не «что бывает в такой комнате», а что реально закрыто в
+// этом раунде. Пропущенные шаги не в счёт: их ребёнок не убирал.
+const KIND_TAGS = {
+  chair: 'textile', floor: 'floor', bed: 'bed',
+  desk: 'surface', shelf: 'surface', surface: 'surface',
+  wipe: 'surface', bin: 'trash', other: null,
+};
+const CATEGORY_TAGS = {
+  trash: 'trash', bin_full: 'trash', textile: 'textile', floor: 'floor', make_bed: 'bed',
+};
+export function roundContextTags(round) {
+  const cleaned = new Set();
+  const overview = round?.mode === 'overview';
+  for (const st of round?.steps || []) {
+    if (!st.doneAt || st.skipped) continue;
+    // На крупном плане снят стол или полка — любой закрытый цвет означает,
+    // что поверхность разобрана. В комнате так решать нельзя: игрушки могли
+    // лежать на полу, и «протри стол» после них — задание невпопад.
+    if (!overview) cleaned.add('surface');
+    const kindTag = overview ? KIND_TAGS[normalizeZoneKind(st.kind)] : null;
+    if (kindTag) cleaned.add(kindTag);
+    // Стол, который уже протёрли шагом маршрута, второй раз тряпочкой не просим.
+    if (overview && normalizeZoneKind(st.kind) === 'wipe') cleaned.add('wiped');
+    const catTag = CATEGORY_TAGS[normalizeActionCategory(st.category)];
+    if (catTag) cleaned.add(catTag);
+  }
+  // Подошли и разобрали очаг крупным планом — поверхность точно убрана.
+  if ((round?.closeups || []).length) cleaned.add('surface');
+  return { seen: [...(round?.seen || [])], cleaned: [...cleaned] };
 }
 
 // ── Что было заданием — одной строкой, для промпта /verify и для истории ────
