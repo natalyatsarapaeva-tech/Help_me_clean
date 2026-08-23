@@ -236,6 +236,26 @@
       </div>
     </section>
 
+    <!-- Шаг 4.5. Разбор «финального» фото: что ещё осталось. Раньше здесь был
+         тупик — проверка не засчитывала уборку, но сказать ребёнку было нечего,
+         и раунд молча заканчивался. Теперь оставшееся обведено прямо на его
+         кадре: «убери лишнее» ничего не значит, пока не видно, что лишнее. -->
+    <section id="step-recheck" class="step col">
+      <h1 id="recheck-title">Да ты почти у цели!</h1>
+      <div class="stage">
+        <div class="frame">
+          <img id="recheck-shot" alt="">
+          <div class="boxes" id="recheck-boxes"></div>
+        </div>
+        <div class="panel card col">
+          <div class="task-text" id="recheck-text">—</div>
+          <div class="muted" id="recheck-count"></div>
+          <button class="btn btn-primary btn-big" id="btn-recheck-go">Убрал! Снять ещё раз</button>
+          <div class="muted" style="font-size:14px">Искорки за шаги уже твои — они никуда не денутся.</div>
+        </div>
+      </div>
+    </section>
+
     <!-- Шаг 5. Итог. -->
     <section id="step-done" class="step col">
       <div class="praise" id="done-praise">Готово!</div>
@@ -334,9 +354,15 @@
       roundContextTags,
     } from './js/round-core.js';
 
+    // Форма ответа проверки для случаев, когда мы отвечаем за модель (упала сеть).
+    const EMPTY_VERIFY_UI = {
+      done: false, status: 'incomplete', score: 'ok', praise: '', left: [], boxes: [],
+      trashLeft: 0, othersLeft: 0, afterCount: null, beforeCount: null,
+      referenceCount: null, overReference: false, improved: null, missed: [],
+    };
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-    const STEPS = ['step-room', 'step-mode', 'step-camera', 'step-thinking', 'step-brief', 'step-round', 'step-after', 'step-done', 'step-bonus'];
+    const STEPS = ['step-room', 'step-mode', 'step-camera', 'step-thinking', 'step-brief', 'step-round', 'step-after', 'step-recheck', 'step-done', 'step-bonus'];
     const show = id => STEPS.forEach(s => $(s).classList.toggle('on', s === id));
     let toastTimer;
     const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); };
@@ -354,6 +380,7 @@
     let round = null;
     let frameBefore = null;   // стоп-кадр «до»: и в /scan, и потом в /verify
     let frameZone = null;     // крупный план очага: живёт только пока открыт вложенный раунд
+    let frameAfter = null;    // кадр «после»: держим, пока показываем на нём, что осталось
     // Куда смотрит камера прямо сейчас: вся комната/поверхность или очаг внутри комнаты.
     let shootTarget = 'main';
     let limitNote = '';       // «это место сегодня уже убирали» — считается сразу после скана
@@ -677,45 +704,87 @@
       await openCamera($('video2'), $('cam-fallback2'));
     }
 
-    async function runVerify(frameAfter) {
+    async function runVerify(frame) {
       show('step-thinking');
-      $('thinking-text').textContent = 'Проверяю…';
+      $('thinking-text').textContent = 'Считаю, что осталось…';
       let result = null;
       try {
         let referenceUrl = null;
         if (room?.id) { try { referenceUrl = (await getReference(fid, room.id))?.url || null; } catch (_) {} }
         result = await verify({
           imageBefore: frameBefore?.base64 || null,
-          imageAfter: frameAfter.base64,
+          imageAfter: frame.base64,
           task: roundTaskText(round),
           referenceUrl,
+          // Сколько лишнего было до уборки — уже знает сканер, пересчитывать «до»
+          // на глаз модели незачем.
+          beforeCount: beforeItemsCount(),
         });
       } catch (e) {
         console.warn('verify:', e);
         // Сеть подвела — не наказываем ребёнка: засчитываем как выполненное.
-        result = { done: true, status: 'done', score: 'ok', praise: 'Молодец!', missed: [] };
-      } finally {
-        revokeFrame(frameAfter);
+        result = { ...EMPTY_VERIFY_UI, done: true, status: 'done', praise: 'Молодец!' };
       }
-      if (result.status === 'retake' || result.status === 'person') {
-        toast(result.status === 'person' ? 'Отойди из кадра и сними ещё раз' : 'Кадр не получился — сними ещё раз');
+      // Кадр «после» освобождаем не сразу: если не засчитано, на нём же и
+      // показываем, что осталось.
+      if (result.status === 'person' || result.status === 'retake' || result.status === 'unclear') {
+        revokeFrame(frame);
+        toast(result.status === 'person' ? 'Отойди из кадра и сними ещё раз'
+          : result.status === 'unclear' ? 'Не разглядел поверхность — сними её целиком'
+          : 'Кадр не получился — сними ещё раз');
         await goVerify();
         return;
       }
-      if (!result.done && result.left.length) {
-        // Мягко по форме, конкретно по содержанию: ребёнок должен видеть, сколько
-        // именно осталось. «Осталось: носок» на заваленном столе звучало как
-        // придирка и не давало понять, доделывать минуту или десять.
-        const phrase = missedPhrase(result.left);
-        $('after-title').textContent = result.praise || 'Да ты почти у цели!';
-        $('after-sub').textContent = `Осталось только ${phrase}. Убери — и сними ещё раз, я посмотрю.`;
-        show('step-after');
-        say(`${result.praise || 'Да ты почти у цели!'} Осталось только ${phrase}`);
-        await openCamera($('video2'), $('cam-fallback2'));
-        return;
-      }
+      if (!result.done) { showRecheck(frame, result); return; }
+      revokeFrame(frame);
       await finish(result);
     }
+
+    // Сколько лишнего было ДО уборки: на крупном плане это предметы кадра,
+    // в комнате — оценка сканера по очагам.
+    function beforeItemsCount() {
+      if (!round) return null;
+      if (round.mode !== 'overview') return round.items.length || null;
+      const n = (round.items || []).reduce((sum, z) => sum + (Number(z.itemsEstimate) || 0), 0);
+      return n || null;
+    }
+
+    // Разбор «финального» фото: рамки вокруг оставшегося + что с этим делать.
+    // Мягко по форме, настойчиво по сути — и никакого тупика: единственная
+    // кнопка ведёт доубираться.
+    function showRecheck(frame, result) {
+      if (frameAfter) revokeFrame(frameAfter);
+      frameAfter = frame;
+      $('recheck-shot').src = frame.url;
+      $('recheck-boxes').innerHTML = (result.boxes || []).map(b => {
+        const [x, y, w, h] = b.box;
+        return `<span class="box" style="--c:#E53935;left:${x * 100}%;top:${y * 100}%;width:${w * 100}%;height:${h * 100}%">
+          ${b.label ? `<span class="tag">${esc(b.label)}</span>` : ''}</span>`;
+      }).join('');
+
+      const phrase = missedPhrase(result.left);
+      // Кадр «после» ничем не отличается от «до» — это стоит назвать вслух,
+      // иначе «почти у цели» после нулевой уборки звучит как издёвка.
+      const same = result.improved === false;
+      const title = same ? 'Хм, тут всё как было' : (result.praise || 'Да ты почти у цели!');
+      const text = phrase
+        ? `${same ? 'Начни с этого: ' : 'Осталось только '}${phrase}.`
+        : 'Убери то, что я обвёл красным, — и снимем заново.';
+      $('recheck-title').textContent = title;
+      $('recheck-text').textContent = text;
+      $('recheck-count').textContent = result.overReference
+        ? `На фото ещё ${result.afterCount} лишних вещей, а на эталоне родителей — ${result.referenceCount}.`
+        : (result.afterCount
+          ? `Вижу ${result.afterCount} лишних вещей. Оставить можно не больше ${VERIFY_LIMITS.others}, и мусора — ни одной штуки.`
+          : '');
+      show('step-recheck');
+      say(`${title}. ${text}`);
+    }
+
+    $('btn-recheck-go').onclick = async () => {
+      if (frameAfter) { revokeFrame(frameAfter); frameAfter = null; }
+      await goVerify();
+    };
 
     // ── Финал: начисление и запись ──
     async function finish(verifyResult) {
@@ -946,6 +1015,7 @@
     $('btn-again').onclick = async () => {
       if (frameBefore) { revokeFrame(frameBefore); frameBefore = null; }
       if (frameZone) { revokeFrame(frameZone); frameZone = null; }
+      if (frameAfter) { revokeFrame(frameAfter); frameAfter = null; }
       round = null; limitNote = ''; shootTarget = 'main';
       stopTimer(); $('timer').textContent = '0:00';
       $('estimate').classList.add('hidden');

@@ -487,8 +487,7 @@ export function sanitizeVerify(raw) {
   if (r.retake === true || r.status === 'retake') return { ...EMPTY_VERIFY, status: 'retake' };
   // Что осталось на поверхности — списком с количеством. Раньше просили ОДНУ
   // вещь (§296), но «осталось: носок» на заваленном столе звучало как придирка
-  // и не показывало ребёнку, сколько ещё работы. Теперь называем всё, что
-  // мешает, — коротко и с числом.
+  // и не показывало ребёнку, сколько ещё работы.
   const left = (Array.isArray(r.left) ? r.left : []).slice(0, 4).map(x => ({
     label: String(x?.label || '').trim(),
     count: Math.max(1, Math.round(Number(x?.count) || 1)),
@@ -497,30 +496,59 @@ export function sanitizeVerify(raw) {
     // лучше любого нашего шаблона («выбросить три бумажки»).
     todo: String(x?.todo || '').trim(),
   })).filter(x => x.label || x.todo);
+  // Рамки вокруг того, что осталось: экран покажет их прямо на «финальном»
+  // фото. Словами «убери лишнее» ребёнок не понимает, ЧТО именно лишнее.
+  const boxes = (Array.isArray(r.boxes) ? r.boxes : []).slice(0, 12)
+    .map(b => ({ label: String(b?.label || '').trim(), box: cornersToXywh(b?.box) }))
+    .filter(b => b.box);
+  const beforeCount = countOrNull(r.before_count);
+  const afterCount = countOrNull(r.after_count) ?? (boxes.length || null);
+  const referenceCount = countOrNull(r.reference_count);
+
   const isTrash = (x) => x.category === 'trash' || x.category === 'bin_full';
   const trashLeft = left.filter(isTrash).reduce((n, x) => n + x.count, 0);
-  const othersLeft = left.filter(x => !isTrash(x)).reduce((n, x) => n + x.count, 0);
-  // Норма живёт В КОДЕ, а не в настроении модели: одна и та же комната должна
-  // засчитываться одинаково в понедельник и в пятницу. Модель только считает,
-  // что осталось; проходной балл ставим мы. Списка нет — верим её «done»:
-  // сказать ребёнку всё равно нечего, а придираться вслепую нельзя.
-  const done = left.length
-    ? (trashLeft <= VERIFY_LIMITS.trash && othersLeft <= VERIFY_LIMITS.others)
-    : r.done === true;
+  const listOthers = left.filter(x => !isTrash(x)).reduce((n, x) => n + x.count, 0);
+  // Список и общий счёт могут расходиться: модель называет три группы, а всего
+  // видит девять предметов. Берём СТРОГОЕ прочтение — иначе проверку обходит
+  // сама неаккуратность ответа.
+  const othersLeft = afterCount == null ? listOthers : Math.max(listOthers, afterCount - trashLeft);
+
+  // Судить не по чему: ни списка, ни счёта. Это не «убрано» — это нечитаемый
+  // ответ, и раньше он молча засчитывался как успех (у модели просили список,
+  // она возвращала пустой — и уборка «проходила» с тем же беспорядком в кадре).
+  const unverified = !left.length && afterCount == null;
+  // Эталон родителя строже нашей тройки: если на «после» лишнего больше, чем
+  // на фото «как должно быть» — не убрано, сколько бы там ни было предметов.
+  const overReference = referenceCount != null && afterCount != null && afterCount > referenceCount;
+  const done = !unverified
+    && trashLeft <= VERIFY_LIMITS.trash
+    && othersLeft <= VERIFY_LIMITS.others
+    && !overReference;
   return {
     done,
-    status: done ? 'done' : 'incomplete',
+    status: unverified ? 'unclear' : (done ? 'done' : 'incomplete'),
     score: VERIFY_SCORES.includes(r.score) ? r.score : 'ok',
     praise: String(r.praise || '').trim(),
-    left, trashLeft, othersLeft,
+    left, boxes,
+    trashLeft, othersLeft: Math.max(0, othersLeft),
+    beforeCount, afterCount, referenceCount, overReference, unverified,
+    // Стало ли лучше вообще. false — кадр «после» не отличается от «до»:
+    // сфотографировали тот же беспорядок дважды.
+    improved: (beforeCount != null && afterCount != null) ? afterCount < beforeCount : null,
     // Совместимость с прежним полем: что именно осталось сделать.
     missed: left.map(x => x.todo || x.label).filter(Boolean),
   };
 }
 const EMPTY_VERIFY = {
   done: false, status: 'incomplete', score: 'ok', praise: '',
-  left: [], trashLeft: 0, othersLeft: 0, missed: [],
+  left: [], boxes: [], trashLeft: 0, othersLeft: 0,
+  beforeCount: null, afterCount: null, referenceCount: null,
+  overReference: false, unverified: false, improved: null, missed: [],
 };
+function countOrNull(v) {
+  const n = Math.round(Number(v));
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
 
 // «Осталось только выбросить три бумажки и отнести посуду на место».
 // Мягко по форме, конкретно по содержанию: ребёнок должен понимать, сколько

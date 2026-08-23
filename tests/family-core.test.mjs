@@ -112,36 +112,80 @@ test('sanitizeScan closeup: отбрасывает неизвестные кат
 });
 
 test('sanitizeVerify: планку держит код, а не настроение модели', () => {
-  assert.equal(sanitizeVerify({ done: true, score: 'great', praise: 'Чисто!' }).status, 'done');
+  assert.equal(sanitizeVerify({ after_count: 0, left: [] }).status, 'done');
   assert.equal(sanitizeVerify({ person_detected: true }).status, 'person');
   assert.equal(sanitizeVerify({ retake: true }).status, 'retake');
 
   // Мусор не прощается вообще — даже одна бумажка.
-  const trash = sanitizeVerify({ done: true, left: [
+  const trash = sanitizeVerify({ after_count: 1, left: [
     { label: 'бумажка', count: 1, category: 'trash', todo: 'выбросить бумажку' },
   ] });
-  assert.equal(trash.done, false, 'модель сказала «убрано», а фантик на столе лежит');
+  assert.equal(trash.done, false);
   assert.equal(trash.trashLeft, 1);
 
   // Три посторонние вещи — допуск, четыре — уже неубранная поверхность.
-  const three = sanitizeVerify({ done: false, left: [
+  const three = sanitizeVerify({ after_count: 3, left: [
     { label: 'книга', count: 2, category: 'belongs_elsewhere' },
     { label: 'кружка', count: 1, category: 'dishes' },
   ] });
   assert.equal(three.done, true, 'придираться к забытой кружке нельзя');
   assert.equal(three.othersLeft, 3);
-  const four = sanitizeVerify({ done: false, left: [{ label: 'книги', count: 4, category: 'paper' }] });
+  const four = sanitizeVerify({ after_count: 4, left: [{ label: 'книги', count: 4, category: 'paper' }] });
   assert.equal(four.done, false);
-  assert.equal(four.othersLeft, 4);
-
-  // Списка нет — сказать ребёнку нечего, верим слову модели.
-  assert.equal(sanitizeVerify({ done: true, left: [] }).done, true);
-  assert.equal(sanitizeVerify({ done: false }).done, false);
   assert.deepEqual(VERIFY_LIMITS, { trash: 0, others: 3 });
 });
 
+test('нечитаемый ответ — это не «убрано»', () => {
+  // Так и выглядел баг: сняли захламлённую тумбочку дважды, модель вернула
+  // пустой список и похвалу — и уборка засчитывалась.
+  const silent = sanitizeVerify({ score: 'great', praise: 'Чисто!' });
+  assert.equal(silent.done, false);
+  assert.equal(silent.status, 'unclear', 'судить не по чему — просим переснять, а не награждаем');
+  assert.equal(silent.unverified, true);
+  // И слову «done» без единого числа больше не верим.
+  assert.equal(sanitizeVerify({ done: true, praise: 'Молодец' }).done, false);
+  // Явный ноль — совсем другое дело: модель посчитала и ничего не нашла.
+  const clean = sanitizeVerify({ after_count: 0, before_count: 9, left: [] });
+  assert.equal(clean.done, true);
+  assert.equal(clean.improved, true);
+});
+
+test('счёт строже списка: три названные группы против девяти предметов', () => {
+  const v = sanitizeVerify({
+    before_count: 10, after_count: 10,
+    left: [{ label: 'бумажки', count: 3, category: 'trash', todo: 'выбросить три бумажки' }],
+  });
+  assert.equal(v.trashLeft, 3);
+  assert.equal(v.othersLeft, 7, 'из десяти лишних три — мусор, остальные семь тоже считаются');
+  assert.equal(v.done, false);
+  assert.equal(v.improved, false, 'фото «после» не отличается от «до»');
+});
+
+test('эталон родителей строже нашей тройки', () => {
+  const strict = sanitizeVerify({ after_count: 3, reference_count: 1, left: [
+    { label: 'книга', count: 3, category: 'paper' },
+  ] });
+  assert.equal(strict.overReference, true);
+  assert.equal(strict.done, false, 'у семьи свой порядок, и он важнее общей планки');
+  const ok = sanitizeVerify({ after_count: 1, reference_count: 1, left: [{ label: 'лампа', count: 1, category: 'paper' }] });
+  assert.equal(ok.done, true);
+});
+
+test('рамки вокруг оставшегося: без них «убери лишнее» ничего не значит', () => {
+  const v = sanitizeVerify({ after_count: 2, boxes: [
+    { label: 'бумажка', box: [0.1, 0.2, 0.3, 0.4] },
+    { label: 'кривая', box: [0.1, 0.2] },
+  ] });
+  assert.equal(v.boxes.length, 1, 'кривая рамка отброшена');
+  const [x, y, w, h] = v.boxes[0].box;
+  assert.deepEqual([x, y], [0.1, 0.2]);
+  assert.ok(Math.abs(w - 0.2) < 1e-9 && Math.abs(h - 0.2) < 1e-9, 'углы приведены к x/y/w/h');
+  // Счёт можно взять из рамок, если модель забыла итог.
+  assert.equal(sanitizeVerify({ boxes: [{ label: 'а', box: [0, 0, 0.1, 0.1] }] }).afterCount, 1);
+});
+
 test('фраза «осталось только…» — конкретная, но не придирка', () => {
-  const v = sanitizeVerify({ left: [
+  const v = sanitizeVerify({ after_count: 4, left: [
     { label: 'бумажки', count: 3, category: 'trash', todo: 'выбросить три бумажки' },
     { label: 'кружка', count: 1, category: 'dishes', todo: 'отнести посуду на место' },
   ], praise: 'Да ты почти у цели!' });
