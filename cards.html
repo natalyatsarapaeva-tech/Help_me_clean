@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Карточки — Наведи и убери</title>
+  <title data-i18n="title.cards">Cards — Point &amp; Tidy</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#3A5DA8">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -28,57 +28,50 @@
 </head>
 <body>
   <div class="wrap col">
-    <a class="back" href="index.html">← Назад</a>
-    <h1>Карточки коллекции</h1>
+    <a class="back" href="index.html" data-i18n="common.back">← Back</a>
+    <h1 data-i18n="cards.title">Collection cards</h1>
 
     <!-- Каталог семьи. -->
     <section id="step-list" class="step on col">
-      <p class="muted">
-        За подтверждённую уборку ребёнок получает одну карточку из этого набора.
-        Что это будет — решаете вы: наклейки, рисунки, кадры из мультика, семейные фото.
-        Карточка принадлежит образу: у Миньона своя витрина, у Джедая своя,
-        «для обоих» выпадает в любом.
-      </p>
+      <p class="muted" data-i18n="cards.intro"></p>
       <div class="row">
         <span class="chip" id="summary">—</span>
-        <button class="btn btn-primary" id="btn-add" style="margin-left:auto">+ Добавить карточку</button>
+        <button class="btn btn-primary" id="btn-add" style="margin-left:auto" data-i18n="cards.add">+ Add a card</button>
       </div>
       <div id="grid" class="grid"></div>
-      <p class="muted hidden" id="empty">
-        Пока пусто. Без карточек уборка работает — просто в конце не будет награды-карточки.
-      </p>
+      <p class="muted hidden" id="empty" data-i18n="cards.empty"></p>
     </section>
 
     <!-- Съёмка / выбор файла. -->
     <section id="step-shoot" class="step col">
-      <h1>Новая карточка</h1>
-      <p class="muted">Сфотографируйте наклейку или рисунок — или выберите готовый файл.</p>
+      <h1 data-i18n="cards.newTitle">New card</h1>
+      <p class="muted" data-i18n="cards.newHint">Photograph the sticker or the drawing.</p>
       <div class="frame" id="frame">
         <video id="video" playsinline muted></video>
-        <button class="shutter" id="btn-shot" aria-label="Снять"></button>
+        <button class="shutter" id="btn-shot" data-i18n-aria-label="cards.shoot" aria-label="Take a photo"></button>
       </div>
       <div class="row">
         <label class="btn btn-ghost" style="max-width:320px">
-          🖼 Выбрать файл
+          <span data-i18n="cards.pickFile">🖼 Choose a file</span>
           <input id="file-input" type="file" accept="image/*" hidden>
         </label>
         <span class="muted" id="cam-error"></span>
       </div>
-      <button class="btn btn-ghost" id="btn-cancel" style="max-width:240px">← К списку</button>
+      <button class="btn btn-ghost" id="btn-cancel" style="max-width:240px" data-i18n="common.backToList">← Back to list</button>
     </section>
 
     <!-- Подпись и образ. -->
     <section id="step-meta" class="step col">
-      <h1>Как её зовут?</h1>
+      <h1 data-i18n="cards.metaTitle">What is it called?</h1>
       <div class="row" style="align-items:flex-start">
         <div class="frame" style="max-width:280px"><img id="preview" alt=""></div>
         <div class="col" style="flex:1;min-width:260px">
-          <input id="card-name" class="field" placeholder="Название (например, «Кевин»)" maxlength="40">
-          <div class="muted">В каком образе она выпадает?</div>
+          <input id="card-name" class="field" data-i18n-placeholder="cards.namePlaceholder" placeholder="" maxlength="40">
+          <div class="muted" data-i18n="cards.whichTheme">Which character does it drop for?</div>
           <div class="theme-pick" id="theme-pick"></div>
           <div class="row">
-            <button class="btn btn-primary" id="btn-save">Сохранить</button>
-            <button class="btn btn-ghost" id="btn-retake">Другое фото</button>
+            <button class="btn btn-primary" id="btn-save" data-i18n="common.save">Save</button>
+            <button class="btn btn-ghost" id="btn-retake" data-i18n="cards.anotherPhoto">Another photo</button>
           </div>
         </div>
       </div>
@@ -90,54 +83,66 @@
   <script type="module">
     import {
       initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
-      listCards, saveCard, deleteCard, getSettings, isParentUnlocked,
+      listCards, saveCard, deleteCard, getSettings, isParentUnlocked, applyFamilyLang,
     } from './js/store.js';
     import { parentAreaLocked } from './js/profile-core.js';
     import { startCamera, stopCamera, cameraErrorText } from './js/camera.js';
     import { compressCard } from './js/image.js';
-    import { THEMES, THEME_IDS } from './js/family-core.js';
+    import { theme, THEME_IDS } from './js/family-core.js';
     import { CARD_ANY, normalizeCatalog, catalogSummary, makeCardId } from './js/cards-core.js';
+    import { t, applyI18n } from './js/i18n.js';
 
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const STEPS = ['step-list', 'step-shoot', 'step-meta'];
     const show = id => STEPS.forEach(s => $(s).classList.toggle('on', s === id));
     let toastTimer;
-    const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); };
+    const toast = (m) => { const el = $('toast'); el.textContent = m; el.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), 2600); };
+    applyI18n();
 
-    const THEME_LABEL = { [CARD_ANY]: '🎲 Для обоих', ...Object.fromEntries(THEME_IDS.map(t => [t, `${THEMES[t].currencyEmoji} ${THEMES[t].label}`])) };
+    // Подписи образов зависят от языка — считаем их функцией, а не константой.
+    const themeLabels = () => ({
+      [CARD_ANY]: t('cards.forBoth'),
+      ...Object.fromEntries(THEME_IDS.map(id => [id, `${theme(id).currencyEmoji} ${theme(id).label}`])),
+    });
     let fid = null, cards = [], shot = null, pickedTheme = CARD_ANY;
 
     function renderList() {
       const s = catalogSummary(cards);
+      const labels = themeLabels();
       $('summary').textContent = s.total
-        ? `Всего ${s.total} · ${THEME_IDS.map(t => `${THEMES[t].label}: ${s.byTheme[t]}`).join(' · ')} · для обоих: ${s.byTheme[CARD_ANY]}`
-        : 'Карточек пока нет';
+        ? t('cards.summary', {
+            total: s.total,
+            byTheme: THEME_IDS.map(id => `${theme(id).label}: ${s.byTheme[id]}`).join(' · '),
+            any: s.byTheme[CARD_ANY],
+          })
+        : t('cards.none');
       $('empty').classList.toggle('hidden', !!s.total);
       $('grid').innerHTML = normalizeCatalog(cards).map(c => `
         <div class="card card-tile" data-card="${esc(c.id)}">
           <img src="${esc(c.url)}" alt="">
-          <div class="nm">${esc(c.name || 'Без названия')}</div>
-          <div class="muted" style="font-size:14px">${esc(THEME_LABEL[c.theme] || c.theme)}</div>
-          <button class="btn btn-ghost drop">Удалить</button>
+          <div class="nm">${esc(c.name || t('cards.unnamed'))}</div>
+          <div class="muted" style="font-size:14px">${esc(labels[c.theme] || c.theme)}</div>
+          <button class="btn btn-ghost drop">${esc(t('common.delete'))}</button>
         </div>`).join('');
       $('grid').querySelectorAll('[data-card]').forEach(el => {
         const id = el.dataset.card;
         el.querySelector('.drop').onclick = async () => {
-          if (!confirm('Удалить карточку из набора? У детей уже добытые останутся.')) return;
+          if (!confirm(t('cards.confirmDelete'))) return;
           try {
             await deleteCard(fid, id);
             cards = cards.filter(c => c.id !== id);
             renderList();
-            toast('Карточка удалена');
-          } catch (e) { console.error(e); toast('Не удалось удалить'); }
+            toast(t('cards.deleted'));
+          } catch (e) { console.error(e); toast(t('cards.deleteFailed')); }
         };
       });
     }
 
     function renderThemePick() {
-      $('theme-pick').innerHTML = [CARD_ANY, ...THEME_IDS].map(t => `
-        <button class="btn btn-ghost ${t === pickedTheme ? 'on' : ''}" data-theme="${t}">${esc(THEME_LABEL[t])}</button>`).join('');
+      const labels = themeLabels();
+      $('theme-pick').innerHTML = [CARD_ANY, ...THEME_IDS].map(id => `
+        <button class="btn btn-ghost ${id === pickedTheme ? 'on' : ''}" data-theme="${id}">${esc(labels[id])}</button>`).join('');
       $('theme-pick').querySelectorAll('[data-theme]').forEach(el => {
         el.onclick = () => { pickedTheme = el.dataset.theme; renderThemePick(); };
       });
@@ -164,7 +169,7 @@
         renderThemePick();
         show('step-meta');
         $('card-name').focus();
-      } catch (e) { console.error(e); toast('Не получилось — попробуйте другое фото'); }
+      } catch (e) { console.error(e); toast(t('cards.captureFailed')); }
     }
     function dropShot() { if (shot?.url) URL.revokeObjectURL(shot.url); shot = null; }
 
@@ -176,7 +181,7 @@
     $('btn-save').onclick = async () => {
       if (!shot) return;
       const name = $('card-name').value.trim();
-      if (!name) { toast('Дайте карточке имя — ребёнок будет его называть'); $('card-name').focus(); return; }
+      if (!name) { toast(t('cards.needName')); $('card-name').focus(); return; }
       $('btn-save').disabled = true;
       try {
         const id = makeCardId(name);
@@ -185,10 +190,10 @@
         dropShot();
         renderList();
         show('step-list');
-        toast('Карточка добавлена');
+        toast(t('cards.added'));
       } catch (e) {
         console.error(e);
-        toast(e?.code === 'storage/unauthorized' ? 'Storage отклонил загрузку — проверьте правила' : 'Не удалось сохранить');
+        toast(t(e?.code === 'storage/unauthorized' ? 'cards.storageDenied' : 'house.saveFailed'));
       } finally { $('btn-save').disabled = false; }
     };
 
@@ -201,6 +206,7 @@
       // Родительская часть под кодом: если он задан, а в этой сессии его не
       // вводили — отправляем на главную, там спросят. Замок от ребёнка, не от взлома.
       const settings = await getSettings(fid).catch(() => null);
+      applyFamilyLang(settings); applyI18n();
       if (parentAreaLocked(settings) && !isParentUnlocked()) { location.href = 'index.html'; return; }
       try { cards = await listCards(fid); } catch (e) { console.warn('cards:', e); }
       renderList();

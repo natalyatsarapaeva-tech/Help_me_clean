@@ -1,0 +1,1211 @@
+// Локализация «Наведи и убери» / "Point & Tidy" localisation core.
+//
+// Why a module and not scattered strings: the app is a family tablet app, and
+// the family that uses it is not necessarily Russian-speaking. Every string the
+// child or the parent can read lives here, keyed by a stable id, in every
+// supported language. Nothing else in the app hard-codes human text.
+//
+// The module is PURE apart from three small DOM helpers at the bottom (guarded
+// by `typeof document`), so the tested cores (family-core, round-core, …) can
+// import `t()` and still run under `node --test`.
+//
+// The language is a device-level choice stored in localStorage: the switch sits
+// in the parent area (index.html), and the value is mirrored into the family
+// settings so a second tablet picks the same language up on first load.
+
+export const LANGS = ['en', 'ru'];
+export const DEFAULT_LANG = 'en';
+export const LANG_LABELS = { en: 'English', ru: 'Русский' };
+// Name of the language IN that language plus a flag — the switch has to be
+// readable by someone who cannot read the current language.
+export const LANG_CHIPS = { en: '🇬🇧 English', ru: '🇷🇺 Русский' };
+// What the LLM is told to write its human-facing text in (js/ai.js).
+export const LANG_PROMPT_NAMES = { en: 'English', ru: 'Russian' };
+// BCP-47 tag for speechSynthesis and <html lang>.
+export const LANG_TAGS = { en: 'en-US', ru: 'ru-RU' };
+
+const STORAGE_KEY = 'tidy.lang';
+
+export function normalizeLang(raw) {
+  const l = String(raw || '').toLowerCase().slice(0, 2);
+  return LANGS.includes(l) ? l : null;
+}
+
+// Device preference → browser preference → English. Reading storage is wrapped:
+// a tablet in private mode throws on localStorage, and that must not take the
+// whole app down before the first screen is drawn.
+function detectLang() {
+  try {
+    const saved = normalizeLang(globalThis.localStorage?.getItem(STORAGE_KEY));
+    if (saved) return saved;
+  } catch (_) {}
+  try {
+    for (const nav of (globalThis.navigator?.languages || [globalThis.navigator?.language])) {
+      const l = normalizeLang(nav);
+      if (l) return l;
+    }
+  } catch (_) {}
+  return DEFAULT_LANG;
+}
+
+let current = detectLang();
+const listeners = new Set();
+
+export function getLang() { return current; }
+export function langTag() { return LANG_TAGS[current] || LANG_TAGS[DEFAULT_LANG]; }
+
+// Смена языка: сохраняем, помечаем документ и зовём подписчиков. Экраны, которые
+// рисуют себя целиком (index.html), перерисовываются; остальные — перезагружаются.
+export function setLang(raw, { persist = true } = {}) {
+  const lang = normalizeLang(raw);
+  if (!lang || lang === current) return current;
+  current = lang;
+  if (persist) { try { globalThis.localStorage?.setItem(STORAGE_KEY, lang); } catch (_) {} }
+  if (typeof document !== 'undefined') document.documentElement.lang = lang;
+  for (const fn of listeners) { try { fn(lang); } catch (e) { console.warn('onLangChange:', e); } }
+  return current;
+}
+export function onLangChange(fn) { listeners.add(fn); return () => listeners.delete(fn); }
+
+// Язык, пришедший из настроек семьи (второй планшет, который ещё не выбирал).
+// Свой сохранённый выбор устройства сильнее: сменить язык на планшете ребёнка,
+// не трогая родительский, — законное желание.
+export function adoptFamilyLang(raw) {
+  const lang = normalizeLang(raw);
+  if (!lang) return current;
+  let saved = null;
+  try { saved = normalizeLang(globalThis.localStorage?.getItem(STORAGE_KEY)); } catch (_) {}
+  if (saved) return current;
+  return setLang(lang, { persist: false });
+}
+
+// ── Словари ─────────────────────────────────────────────────────────────────
+// Плоские ключи с точками. Подстановки — {name}. Нет перевода — берём английский,
+// нет и его — возвращаем ключ: пустая строка на экране хуже, чем видимый ключ.
+export function t(key, vars) {
+  const k = String(key);
+  const raw = (DICT[current] && DICT[current][k]) ?? DICT[DEFAULT_LANG][k] ?? k;
+  if (!vars) return raw;
+  return String(raw).replace(/\{(\w+)\}/g, (m, name) =>
+    (Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : m));
+}
+// Список по префиксу: `tidy.standard.1`, `.2`, … — для промптов и правил.
+export function tList(prefix) {
+  const out = [];
+  for (let i = 1; ; i += 1) {
+    const key = `${prefix}.${i}`;
+    const dict = DICT[current] || {};
+    if (!(key in dict) && !(key in DICT[DEFAULT_LANG])) break;
+    out.push(t(key));
+  }
+  return out;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// English (source language of the interface).
+// ────────────────────────────────────────────────────────────────────────────
+const EN = {
+  // ── App shell ──
+  'app.name': 'Point & Tidy',
+  'app.short': 'Tidy',
+  'app.description': 'An app that teaches a child to tidy up: the camera shows what to put away and turns it into short rounds.',
+  'title.home': 'Point & Tidy',
+  'title.scan': 'Tidying — Point & Tidy',
+  'title.collection': 'Collection — Point & Tidy',
+  'title.shop': 'Shop — Point & Tidy',
+  'title.children': 'Children — Point & Tidy',
+  'title.house': 'Home — Point & Tidy',
+  'title.reference': 'Reference shots — Point & Tidy',
+  'title.cards': 'Cards — Point & Tidy',
+  'title.rewards': 'Rewards — Point & Tidy',
+
+  // ── Common ──
+  'common.back': '← Back',
+  'common.backToList': '← Back to list',
+  'common.loading': 'Loading…',
+  'common.copy': 'Copy',
+  'common.save': 'Save',
+  'common.delete': 'Delete',
+  'common.remove': 'Remove',
+  'common.add': 'Add',
+  'common.retake': 'Retake',
+  'common.somethingWrong': 'Something went wrong',
+  'common.noConnection': 'Could not save — check your connection',
+  'common.language': 'Language',
+
+  // ── Errors (index.html) ──
+  'err.copyThis': '⚠️ Error — copy this text and send it to me:',
+  'err.realProject': 'REAL project: ',
+  'err.uid': 'uid (signed in?): ',
+  'err.uidNone': 'NO — not signed in',
+  'err.step': 'step: ',
+  'err.badCredentials': 'Wrong email or password',
+  'err.emailInUse': 'That email is already registered',
+  'err.providerOff': 'This sign-in provider is not enabled in Firebase Auth',
+  'err.permissionDenied': 'Firestore rejected the write{where}. Check that the rules are published in project help-me-clean-7969f.',
+
+  // ── Sign in ──
+  'login.sub': 'Sign-in is for the parent. Children pick themselves afterwards — they do not need an account.',
+  'login.email': 'Email',
+  'login.password': 'Password',
+  'login.signIn': 'Sign in',
+  'login.register': 'Create account',
+  'login.toRegister': 'No account yet? Create one',
+  'login.toSignIn': 'Already have an account? Sign in',
+  'login.or': 'or',
+  'login.google': 'Sign in with Google',
+  'login.needBoth': 'Enter your email and password',
+
+  // ── Profiles ──
+  'profiles.title': 'Who is tidying up?',
+  'profiles.empty': 'No profiles yet — open the parent area and add a child.',
+  'profiles.parentArea': '👑 Parents',
+  'profiles.child': 'Child',
+  'profiles.locked': '🔒 code',
+  'profiles.open': 'no code',
+
+  // ── PIN ──
+  'pin.fourDigits': 'Four digits',
+  'pin.go': 'Enter',
+  'pin.mustBe4': 'The code is 4 digits',
+  'pin.wrong': 'Wrong code, try again',
+  'pin.yourCode': 'Your code',
+  'pin.childTitle': '{avatar} {name} — your code',
+  'pin.childSub': 'Type your four digits',
+  'pin.parentTitle': '👑 Parent code',
+  'pin.parentSub': 'The four digits the grown-ups know',
+
+  // ── Who am I today ──
+  'who.title': 'Who are you today?',
+  'who.sub': 'You can pick differently every day. Everything you have collected stays with you.',
+
+  // ── Child home ──
+  'child.changeWho': 'Change who I am',
+  'child.notMe': "That's not me",
+  'child.clean': '🧹 Tidy up!',
+  'child.collection': '🃏 My collection',
+  'child.shop': '🎁 Shop',
+  'child.greeting': 'Hi',
+  'child.stats': '{emoji} To spend: {currency}   ·   Earned in total: {earned}   ·   {theme} cards: {cards}   ·   Tidy-ups: {cleanups} ({rank})',
+  'child.statsFailed': 'Could not load — check your connection.',
+
+  // ── Parent area ──
+  'parent.defaultFamily': 'Our home',
+  'parent.toProfiles': '← To profiles',
+  'parent.signOut': 'Sign out',
+  'parent.role': '👑 Parent',
+  'parent.familyCode': 'Family code:',
+  'parent.codeCopied': 'Code copied',
+  'parent.codeCopyFailed': 'Could not copy',
+  'parent.nav.home': '🏠 Home',
+  'parent.nav.children': '🧒 Children',
+  'parent.nav.reference': '📸 Reference shots',
+  'parent.nav.cards': '🃏 Cards',
+  'parent.nav.rewards': '🎁 Rewards',
+  'parent.pin.title': 'Parent code',
+  'parent.pin.titleUnset': 'Parent code is not set',
+  'parent.pin.hintLocked': 'The grown-up area is behind a code. You can change it here.',
+  'parent.pin.hintOpen': 'While there is no code, a child can walk in here and, say, change the shop prices. Set a code — four digits.',
+  'parent.pin.set': 'Set code',
+  'parent.pin.change': 'Change code',
+  'parent.pin.clear': 'Remove code',
+  'parent.pin.saved': 'Code saved',
+  'parent.pin.saveFailed': 'Could not save the code',
+  'parent.pin.cleared': 'Code removed',
+  'parent.pin.clearFailed': 'Could not remove the code',
+  'parent.pin.confirmClear': 'Remove the parent code? The grown-up area will be open to everyone.',
+  'parent.profilesTitle': 'Children profiles',
+  'parent.profilesEmpty': 'None yet — add one on the “Children” screen.',
+  'parent.joinNote': 'Next per the spec: joining a second grown-up by code through the Worker.',
+  'parent.lang.title': 'Language',
+  'parent.lang.hint': 'Applies to the whole app on this tablet — the child screens, the tidy-up round and what the assistant says.',
+  'parent.lang.saved': 'Language switched to English',
+  'parent.lang.familyFailed': 'Language switched on this tablet, but not saved for the family',
+
+  // ── Children screen ──
+  'children.title': 'Children',
+  'children.intro': 'A profile is just a name and an avatar on this tablet: a child does not need a separate account. The 4-digit code only stops the children from opening each other’s profiles. For a little one who does not remember digits yet you can leave it out.',
+  'children.listTitle': 'Profiles',
+  'children.empty': 'Nobody yet. Add the first one below.',
+  'children.addTitle': 'Add a child',
+  'children.avatarTitle': 'Avatar',
+  'children.namePlaceholder': 'Name (e.g. Maya)',
+  'children.pinPlaceholder': 'Code (optional)',
+  'children.addNote': 'Who to be — a Minion or a Jedi — the child picks at every sign-in. Sparkles and progress are shared; each character has its own card collection.',
+  'children.lastTime': ', last time: {theme}',
+  'children.setPin': 'Set code',
+  'children.changePin': 'Change code',
+  'children.clearPin': 'Remove code',
+  'children.promptPin': 'New code for “{name}” — 4 digits:',
+  'children.pinSaved': 'Code saved',
+  'children.pinSaveFailed': 'Could not save the code',
+  'children.confirmClearPin': 'Remove the code from “{name}”? Anyone on this tablet will be able to open it.',
+  'children.pinCleared': 'Code removed',
+  'children.pinClearFailed': 'Could not remove the code',
+  'children.confirmDelete': 'Delete the profile “{name}”? Sparkles, collection and tidy-up history will be gone.',
+  'children.deleted': 'Profile deleted',
+  'children.deleteFailed': 'Could not delete',
+  'children.needName': 'Enter a name',
+  'children.pinExactly4': 'The code is exactly 4 digits',
+  'children.pinExactly4OrEmpty': 'The code is exactly 4 digits (or leave the field empty)',
+  'children.added': 'Profile “{name}” added',
+  'children.addFailed': 'Could not add the profile',
+};
+
+Object.assign(EN, {
+  // ── Home map (home.html) ──
+  'house.title': 'Home',
+  'house.describe': 'Describe your home in one go — the app will build a map of rooms. Any wording works, use your own words.',
+  'house.placeholder': 'We live in a two-storey house. Downstairs there is a hallway, a kitchen, a dining room, a living room and a toilet. Upstairs there is the parents’ bedroom, Maya’s room, the boys’ room, a bathroom and a children’s bathroom. There is also a laundry room and a garage.',
+  'house.build': 'Build the map',
+  'house.building': 'Building the map…',
+  'house.tooShort': 'Describe the home in a little more detail',
+  'house.parseFailed': 'Could not parse that — try wording it differently',
+  'house.scannerResting': 'The scanner is resting until tomorrow',
+  'house.confirm': 'Check and fix: rename rooms, set an emoji and a type, delete anything extra. Nothing is created silently.',
+  'house.addFloor': '+ Floor',
+  'house.toRoute': 'Next: route →',
+  'house.floorName': 'Floor name',
+  'house.deleteFloor': 'Delete floor',
+  'house.roomName': 'Room',
+  'house.addRoom': '+ Room',
+  'house.floorN': 'Floor {n}',
+  'house.routeIntro': 'The order you walk the house in. Mark the “home” room — tidying starts there (motivation is highest in your own room). Use the arrows to change the order.',
+  'house.backToRooms': '← Rooms',
+  'house.saveMap': 'Save the map',
+  'house.noRooms': 'No rooms — go back and add some.',
+  'house.needOneRoom': 'Add at least one room with a name',
+  'house.saved': 'Map saved',
+  'house.saveFailed': 'Could not save',
+
+  // ── Reference shots (reference.html) ──
+  'reference.title': 'Reference shots',
+  'reference.intro': 'A reference shot is a photo of a surface <strong>the way it should look when tidy</strong>. The check compares the child’s “after” with it, not with an ideal in the model’s head: every family has its own idea of order. Without a reference shot tidying still works — the check is just gentler.',
+  'reference.coverage': '{covered} of {total} taken{all}',
+  'reference.coverageAll': ' — every room',
+  'reference.noRooms': 'No rooms yet',
+  'reference.noHome': 'Create a map of your home on the “Home” screen first.',
+  'reference.room': 'Room',
+  'reference.taken': 'Reference shot taken',
+  'reference.missing': 'No reference shot — the check will be gentler',
+  'reference.shoot': 'Take a reference shot',
+  'reference.shootHint': 'Tidy the surface the way you think is right and take a photo of it. From the same angle the child will be shooting from.',
+  'reference.overlay': 'Point at the tidy table or shelf',
+  'reference.takePhoto': '📷 Take a photo',
+  'reference.previewTitle': 'Is this how it should be tidied?',
+  'reference.save': 'Save the reference shot',
+  'reference.confirmDelete': 'Delete the reference shot for “{name}”?',
+  'reference.deleted': 'Reference shot deleted',
+  'reference.captureFailed': 'That did not work — try again',
+  'reference.saved': 'Reference shot saved',
+  'reference.saveFailed': 'Could not save the reference shot',
+  'reference.storageDenied': 'Storage rejected the upload — check the rules',
+
+  // ── Collection cards (cards.html) ──
+  'cards.title': 'Collection cards',
+  'cards.intro': 'For a confirmed tidy-up the child gets one card from this set. What the cards are is up to you: stickers, drawings, frames from a cartoon, family photos. A card belongs to a character: the Minion has its own display, the Jedi has another, and “for both” can drop for either.',
+  'cards.add': '+ Add a card',
+  'cards.empty': 'Empty so far. Tidying works without cards — there is simply no card reward at the end.',
+  'cards.summary': '{total} in total · {byTheme} · for both: {any}',
+  'cards.none': 'No cards yet',
+  'cards.newTitle': 'New card',
+  'cards.newHint': 'Photograph the sticker or the drawing — or pick a file you already have.',
+  'cards.pickFile': '🖼 Choose a file',
+  'cards.metaTitle': 'What is it called?',
+  'cards.namePlaceholder': 'Name (for example, “Kevin”)',
+  'cards.whichTheme': 'Which character does it drop for?',
+  'cards.anotherPhoto': 'Another photo',
+  'cards.forBoth': '🎲 For both',
+  'cards.unnamed': 'Untitled',
+  'cards.confirmDelete': 'Remove the card from the set? Cards the children already have will stay.',
+  'cards.deleted': 'Card deleted',
+  'cards.deleteFailed': 'Could not delete',
+  'cards.captureFailed': 'That did not work — try another photo',
+  'cards.needName': 'Give the card a name — the child will be saying it out loud',
+  'cards.added': 'Card added',
+  'cards.storageDenied': 'Storage rejected the upload — check the rules',
+  'cards.shoot': 'Take a photo',
+
+  // ── Real rewards (rewards.html) ──
+  'rewards.title': 'Real rewards',
+  'rewards.intro': 'What the child can swap sparkles for in real life. A purchase spends the balance but <strong>does not touch the all-time total</strong> — rank and status do not drop because of spending. What is bought lands in your hand-out queue.',
+  'rewards.queueTitle': 'Waiting to be handed over',
+  'rewards.queueEmpty': 'Empty — nobody has bought anything.',
+  'rewards.shopTitle': 'What can be bought',
+  'rewards.shopEmpty': 'Empty so far — sparkles pile up, but there is nothing to spend them on.',
+  'rewards.photoTitle': 'Upload a photo of the reward',
+  'rewards.photoCap': '📷 photo',
+  'rewards.namePlaceholder': 'For example, “Ice cream”',
+  'rewards.costPlaceholder': 'Price ✨',
+  'rewards.uploading': 'Loading…',
+  'rewards.emojiHint': 'emoji — if there is no photo',
+  'rewards.dropPhoto': 'Remove photo',
+  'rewards.pricingHint': 'A guide: tidying a room with a check is roughly 8–12 sparkles. Set prices so the nearest reward takes 2–3 tidy-ups and a big one takes a week.',
+  'rewards.otherPhoto': 'Another photo',
+  'rewards.photo': '📷 Photo',
+  'rewards.confirmDelete': 'Remove the reward from the shop? What the children already bought stays.',
+  'rewards.photoUpdated': 'Photo updated',
+  'rewards.photoFailed': 'Could not upload the photo',
+  'rewards.photoFailedWhere': 'The photo did not upload',
+  'rewards.removed': 'Removed from the shop',
+  'rewards.removeFailed': 'Could not remove',
+  'rewards.removeFailedWhere': 'Could not remove the reward',
+  'rewards.forChild': '— {name}, for ✨ {cost}',
+  'rewards.give': 'Handed over',
+  'rewards.given': 'Marked as handed over',
+  'rewards.giveFailed': 'Could not mark it',
+  'rewards.giveFailedWhere': 'Could not mark the hand-over',
+  'rewards.stillLoading': 'One moment, the page is still loading',
+  'rewards.needName': 'Write what the reward is',
+  'rewards.needCost': 'The price is a whole number of sparkles, from 1',
+  'rewards.added': 'Reward added',
+  'rewards.addedWithPhoto': 'Reward with a photo added',
+  'rewards.addFailed': 'Could not save',
+  'rewards.addFailedWhere': 'The reward was not saved',
+  'rewards.fileFailed': 'Could not read the file — try another one',
+  'rewards.errStorage': 'Storage rejected the photo upload — check that storage.rules are published and the IAM role is granted (the console asks for it when publishing).',
+  'rewards.errRules': 'It looks like the Firestore rules were not re-published after the reward shop appeared. Firebase Console → Firestore Database → Rules → paste firestore.rules from the repository → Publish.',
+  'rewards.errOffline': 'No connection to the database — check the internet.',
+  'rewards.errGeneric': 'error',
+  'rewards.noFamily': 'Family not found',
+  'rewards.noFamilyMsg': 'Could not work out which family this is — open the home screen and sign in again.',
+  'rewards.shopFailed': 'The shop did not load',
+
+  // ── Shop (shop.html) ──
+  'shop.title': 'Shop',
+  'shop.toSpend': 'to spend',
+  'shop.toSpendEmoji': '{emoji} to spend',
+  'shop.earnedTotal': 'earned in total',
+  'shop.yourRank': 'your rank',
+  'shop.note': 'A purchase only spends the left-hand number. What you have earned and your rank stay with you forever.',
+  'shop.pendingTitle': 'Waiting for the parents to hand it over',
+  'shop.pending': '— bought, waiting',
+  'shop.empty': 'The parents have not thought of anything to swap sparkles for yet.',
+  'shop.buy': 'Buy',
+  'shop.missing': '{n} more needed',
+  'shop.goal': '{n} more {emoji} — and “{name}” is yours',
+  'shop.enoughForAll': 'You can afford everything there is!',
+  'shop.confirmBuy': 'Buy “{name}” for {cost}?',
+  'shop.notEnough': 'Not enough yet — tidy up some more',
+  'shop.buyFailed': 'That did not work',
+  'shop.bought': '“{name}” bought! Show your parents.',
+  'shop.saveFailed': 'Could not record the purchase — check your connection',
+
+  // ── Collection (collection.html) ──
+  'collection.title': 'My collection',
+  'collection.count': '{got} of {total}',
+  'collection.none': 'No cards yet',
+  'collection.hintNone': 'The parents have not added any cards yet.',
+  'collection.hintComplete': 'You have collected them all! 🎉',
+  'collection.hintMore': 'Every tidy-up that passes the check brings a new card.',
+  'collection.locked': 'Not yours yet',
+});
+
+Object.assign(EN, {
+  // ── Tidy-up round (scan.html) ──
+  'scan.exit': '← Leave',
+  'scan.room': 'Room',
+  'scan.tidying': 'Tidying',
+  'scan.music': '🎵 Music',
+  'scan.estimate': '≈ {n} min',
+  'scan.roomTitle': 'Where do we start?',
+  'scan.roomHint': 'Pick a room — starting with your own works best.',
+  'scan.noHomeMap': 'There is no map of the home yet — you can tidy without it.',
+  'scan.roomDoneToday': 'that’s it for today',
+  'scan.roomCountToday': 'tidy-ups today: {n}',
+  'scan.roomNoneToday': 'not tidied today yet',
+  'scan.modeTitle': 'What are we tidying?',
+  'scan.modeTitleRoom': '{room}: what are we tidying?',
+  'scan.modeCloseup': 'A table or a shelf',
+  'scan.modeOverview': 'The whole room',
+  'scan.otherRoom': '← Another room',
+  'scan.camHintCloseup': 'Point the camera at a table or a shelf — then press the big button',
+  'scan.camHintOverview': 'Stand by the door and show the whole room — then press the big button',
+  'scan.camHintZone': 'Walk up to “{zone}” and shoot it close — so every single thing is visible',
+  'scan.takePhoto': '📷 Take a photo',
+  'scan.tidyAnyway': '← I’ll tidy it as it is',
+  'scan.thinking': 'Let me see what you have here…',
+  'scan.counting': 'Counting what is left…',
+  'scan.thinkingBonus': 'Let me see how it went…',
+  'scan.thinkingSub': 'This takes a couple of seconds',
+  'scan.briefTitleBig': 'Wow! There is work to do here',
+  'scan.briefTitleSmall': 'Right, let’s have a look…',
+  'scan.briefLead': 'Here is what I think you have ahead:',
+  'scan.briefLeadMinutes': 'Here is what I think you have ahead (about {n} minutes):',
+  'scan.briefReward': 'If you tidy the whole room with my help — you will earn at least {n} {emoji}!',
+  'scan.briefRewardLimited': 'There are {zones} spots and {steps} steps here.',
+  'scan.briefGo': 'Let’s go step by step!',
+  'scan.briefRetake': 'Shoot the room again',
+  'scan.briefSay': 'Wow! If you tidy the whole room you will earn at least {n}. Here is what I think you have ahead: {plan}. Shall we go step by step?',
+  'scan.briefSayLimited': 'There are {zones} spots here: {plan}. Shall we go step by step?',
+  'scan.stepOf': 'Step {n} of {of}',
+  'scan.zoneOf': 'Spot {n} of {of}',
+  'scan.stepInZone': '{zone}: step {n} of {of}',
+  'scan.done': 'Done ✓',
+  'scan.tidied': 'Tidied ✓',
+  'scan.goCloseup': '📷 Walk up and shoot it',
+  'scan.tidyAnywayDone': 'I’ll tidy it as it is ✓',
+  'scan.skipCloseup': 'It is clean here, skip it',
+  'scan.skipItem': 'There is nothing like that here',
+  'scan.hintCloseup': 'It is small stuff, I cannot make it out from here. Walk up — and I will talk you through it.',
+  'scan.hintOverview': 'Tidied it — tap the circle or the button. The cross means there is nothing there.',
+  'scan.hintItems': 'Tap the things with your finger — or just press “Done”. The cross by a thing means it is not there.',
+  'scan.hintDefault': 'You can tap the things with your finger — or just press “Done”.',
+  'scan.noneHere': 'nothing here',
+  'scan.notThere': 'that is not there',
+  'scan.okNothingHere': 'All right, there really is nothing here',
+  'scan.surprise': 'Surprise!',
+  'scan.roomClean': 'The room is clean! Try another one.',
+  'scan.spotClean': 'It is already clean here! Point at another spot.',
+  'scan.zoneClean': 'It really is clean here — let’s move on',
+  'scan.scannerResting': 'The scanner is resting until tomorrow',
+  'scan.lookFailed': 'I could not make it out — take another shot',
+  'scan.lookFailedZone': 'I could not make it out — tidy it as you see it',
+  'scan.tooDark': 'A bit dark — turn the light on and shoot again',
+  'scan.sayCloseup': '{title}. Walk up close and take a photo.',
+  'scan.sayItems': '{instruction}. There are {n} of them.',
+  'scan.sayZoneCloseup': 'Walk up to {zone} and take a closer photo',
+  'scan.afterTitle': 'Show me how it turned out!',
+  'scan.afterSub': 'Photograph the same spot from the same angle.',
+  'scan.stepOut': 'Step out of the frame and shoot again',
+  'scan.surfaceUnclear': 'I could not see the surface — shoot the whole of it',
+  'scan.badFrame': 'The shot did not work — take another one',
+  'scan.recheckTitle': 'You are almost there!',
+  'scan.recheckSame': 'Hm, everything is just as it was',
+  'scan.recheckStartWith': 'Start with this: {what}.',
+  'scan.recheckLeftOnly': 'All that is left is {what}.',
+  'scan.recheckGeneric': 'Put away what I circled in red — and we will shoot again.',
+  'scan.recheckOverReference': 'There are still {after} extra things in the photo, and the parents’ reference shot has {reference}.',
+  'scan.recheckCount': 'I can see {n} extra things. You may leave no more than {others}, and no rubbish at all.',
+  'scan.recheckGo': 'Done! Shoot it again',
+  'scan.recheckKeep': 'The sparkles for the steps are already yours — they are not going anywhere.',
+  'scan.donePraise': 'Done!',
+  'scan.doneForThis': '{emoji} for this tidy-up',
+  'scan.doneTime': 'spent tidying',
+  'scan.doneItems': 'things put away',
+  'scan.doneNote': 'The room bonus is for a fully tidied room: no rubbish and no more than {others} extra things. The sparkles for the steps stay with you.',
+  'scan.doneTotals': 'You have in total: {emoji} {currency} · earned all-time: {earned} · tidy-ups: {cleanups}',
+  'scan.doneSaveFailed': 'The sparkles counted, but saving failed — check your connection.',
+  'scan.cardWin': 'A new card!',
+  'scan.cardNew': 'A new card',
+  'scan.cardSay': 'A new card: {name}',
+  'scan.wholeCollection': 'The whole collection →',
+  'scan.again': 'One more spot',
+  'scan.goHome': 'Home',
+  'scan.bonusGo': 'I’ll do it!',
+  'scan.bonusSkip': 'Not now',
+  'scan.bonusCancel': '← Not now',
+  'scan.bonusShotTitle': 'Show me how you do it',
+  'scan.bonusOverlay': 'Photographing yourself and your hands IS allowed — that is the point',
+  'scan.bonusPrice': '+{n} {emoji}',
+  'scan.bonusFallbackPraise': 'Great!',
+  'scan.bonusNotSeen': 'I cannot see what we asked for — try again',
+  'scan.bonusAlready': 'That task has already been counted today',
+  'scan.bonusCounted': 'Counted!',
+  'scan.bonusAward': '+{n} {currency}!',
+  'scan.bonusSaveFailed': 'The sparkles counted, but saving failed',
+  'scan.savingSparkles': 'Saving your sparkles…',
+  'scan.placeLimitNote': '{place} has already been tidied {limit} times today — no sparkles and no card for it today. Another spot in this room still counts.',
+  'scan.placeThis': 'This spot',
+  'scan.placeNamed': '“{place}”',
+  'scan.limitPlace': '{place} has already been tidied {limit} times today — that is it for sparkles here today. Tomorrow it counts again.',
+  'scan.limitRoom': 'This room has had {limit} tidy-ups today — that is it for sparkles here today. Tomorrow it counts again.',
+  'scan.roomLimitAhead': 'This room has had {limit} tidy-ups today — there will be no more sparkles for it today. You can still tidy it; tomorrow it counts again.',
+  'scan.verifyFallbackPraise': 'Well done!',
+});
+
+Object.assign(EN, {
+  // ── Domain: action categories (family-core.ACTION_CATEGORIES) ──
+  'action.paper.instruction': 'Gather all the papers into one pile',
+  'action.paper.target': 'On the edge of the table',
+  'action.stationery.instruction': 'Put the pencils and pens in the cup',
+  'action.stationery.target': 'The cup',
+  'action.trash.instruction': 'Throw the rubbish out',
+  'action.trash.target': 'The bin',
+  'action.dishes.instruction': 'Take the dishes back',
+  'action.dishes.target': 'The kitchen',
+  'action.textile.instruction': 'Textiles: dirty in the basket, clean back in place',
+  'action.textile.target': 'The basket or the shelf',
+  'action.toys.instruction': 'Toys into their box',
+  'action.toys.target': 'The box',
+  'action.floor.instruction': 'Clear the floor: boxes, bags, cables — back where they belong',
+  'action.floor.target': 'A shelf, a cupboard, under the desk',
+  'action.make_bed.instruction': 'Make the bed or pull the duvet straight',
+  'action.make_bed.target': 'The bed',
+  'action.belongs_elsewhere.instruction': 'This thing does not live here. Remember where it belongs and take it there',
+  'action.belongs_elsewhere.target': 'Where it lives',
+  'action.bin_full.instruction': 'The bin is full — take it out',
+  'action.bin_full.target': 'The kitchen bin',
+
+  // ── Domain: clutter spots (family-core.ZONE_KINDS) ──
+  'zone.chair.name': 'chair',
+  'zone.chair.plan': 'clear the things off the chair',
+  'zone.floor.name': 'floor',
+  'zone.floor.plan': 'clear the floor',
+  'zone.bed.name': 'bed',
+  'zone.bed.plan': 'make the bed',
+  'zone.desk.name': 'desk',
+  'zone.desk.plan': 'tidy the desk',
+  'zone.shelf.name': 'shelf',
+  'zone.shelf.plan': 'sort out the shelf',
+  'zone.surface.name': 'surface',
+  'zone.surface.plan': 'clear the surface',
+  'zone.wipe.name': 'wipe',
+  'zone.wipe.plan': 'wipe the surface',
+  'zone.wipe.instruction': 'Wipe the surface',
+  'zone.wipe.target': 'With a cloth or a wet wipe',
+  'zone.bin.name': 'rubbish',
+  'zone.bin.plan': 'take the rubbish out',
+  'zone.other.name': 'more',
+  'zone.other.plan': 'put away what is left',
+  'zone.fallbackLabel': 'surface',
+  'zone.wipeAction': 'wipe the {label}',
+  'zone.tidyHere': 'Tidy up here',
+
+  // ── Domain: room types ──
+  'roomType.kitchen': 'Kitchen',
+  'roomType.bedroom_child': 'Child’s room',
+  'roomType.bathroom': 'Bathroom',
+  'roomType.living': 'Living room',
+  'roomType.hall': 'Hallway',
+  'roomType.utility': 'Utility room',
+  'roomType.other': 'Other',
+
+  // ── Domain: characters ──
+  'theme.minion.label': 'Minion',
+  'theme.minion.currencyName': 'bananas',
+  'theme.minion.praiseWord': 'Banana!',
+  'theme.jedi.label': 'Jedi',
+  'theme.jedi.currencyName': 'crystals',
+  'theme.jedi.praiseWord': 'You did it.',
+
+  // ── Domain: ranks ──
+  'rank.1': 'Youngling',
+  'rank.2': 'Padawan',
+  'rank.3': 'Knight',
+  'rank.4': 'Master',
+
+  // ── Domain: what counts as tidy (goes into the scan/verify prompts) ──
+  'tidy.standard.1': 'An empty surface is the norm. Nothing extra should be left on a desk, shelf, chest of drawers or windowsill.',
+  'tidy.standard.2': 'The exception is a writing desk: ONE pile of papers and ONE desk lamp are allowed on it. Everything else is put away.',
+  'tidy.standard.3': 'There should be nothing on the chairs: a chair is for sitting on, not for putting things on.',
+  'tidy.standard.4': 'The bed is made or evenly covered with the duvet, without lumps or hanging bedding.',
+  'tidy.standard.5': 'Boxes, crates, bags, cables and extension leads do not belong on the floor — the floor is clear.',
+  'tidy.standard.6': 'A full bin (especially one full of paper) is a separate task: it gets taken out.',
+
+  'verify.limits.1': 'NOT A SINGLE piece of rubbish (wrappers, scraps of paper, packaging, cores) may be left on the surface.',
+  'verify.limits.2': 'Other stray objects — no more than {others} in total across the whole surface.',
+  'verify.limits.3': 'The floor, the desk, the bedside table, the windowsill and the kitchen and bathroom worktops all count.',
+  'verify.limits.4': 'Furniture, appliances, a desk lamp and ONE pile of papers on a writing desk are the norm — do not count them.',
+
+  'seen.plant': 'plant — a houseplant in a pot',
+  'seen.mirror': 'mirror — a mirror',
+  'seen.shoes': 'shoes — shoes on the floor or on a rack',
+  'seen.books': 'books — books on a shelf or in a pile',
+
+  // ── Domain: bonus tasks (bonus-core.BONUS_TASKS) ──
+  'bonus.dust.title': 'Wipe the dust with a cloth',
+  'bonus.dust.hint': 'Wipe the desk or the shelf — and photograph your hand with the cloth right on it',
+  'bonus.dust.check': 'a child’s hand with a cloth, a wipe or a damp sponge on a desk, shelf or bedside table',
+  'bonus.sweep.title': 'Sweep or vacuum the floor',
+  'bonus.sweep.hint': 'Take a broom or the vacuum cleaner and photograph yourself at work',
+  'bonus.sweep.check': 'a child holding a broom, brush, mop or vacuum cleaner, with the floor visible — floor cleaning is under way',
+  'bonus.laundry.title': 'Take the dirty things to the wash',
+  'bonus.laundry.hint': 'Put the dirty things into the basket or the washing machine and take a photo',
+  'bonus.laundry.check': 'a child’s hands putting clothes or towels into a laundry basket or a washing machine',
+  'bonus.plants.title': 'Water the plant',
+  'bonus.plants.hint': 'Water the plant and photograph the watering can or the glass right by the pot',
+  'bonus.plants.check': 'a watering can, bottle or glass of water next to a houseplant, water pouring or about to pour',
+  'bonus.mirror.title': 'Polish the mirror or the tap',
+  'bonus.mirror.hint': 'Wipe the mirror or the tap and photograph your hand with the cloth on it',
+  'bonus.mirror.check': 'a hand with a cloth or a wipe on a mirror, a tap or a basin',
+  'bonus.shoes.title': 'Line the shoes up neatly',
+  'bonus.shoes.hint': 'Line the shoes up and photograph them from above',
+  'bonus.shoes.check': 'shoes standing in a neat straight row or in pairs, toes pointing the same way',
+  'bonus.books.title': 'Straighten the books on the shelf',
+  'bonus.books.hint': 'Stand the books up straight, spines outwards — and photograph the shelf',
+  'bonus.books.check': 'books on a shelf standing straight, spines outwards, with no heaps or piles lying across',
+
+  // ── Camera ──
+  'camera.notAllowed': 'The camera is not allowed — you can take a photo with the button.',
+  'camera.notFound': 'No camera found — take a photo with the button.',
+  'camera.unavailable': 'The camera is unavailable — take a photo with the button.',
+
+  // ── Round task text (goes into the verify prompt) ──
+  'round.taskRoom': 'tidy the room',
+  'round.taskSurface': 'tidy the surface',
+
+  // ── Missed-items phrase (family-core.missedPhrase) ──
+  'missed.and': 'and',
+  'missed.putAway': 'put away: {label}',
+
+  // ── AI errors ──
+  'ai.error': 'AI error ({status})',
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Русский — исходные строки приложения, перенесённые сюда из экранов и ядра.
+// ────────────────────────────────────────────────────────────────────────────
+const RU = {
+  'app.name': 'Наведи и убери',
+  'app.short': 'Убери',
+  'app.description': 'Приложение, которое учит ребёнка убираться: камера показывает, что убрать, и превращает это в короткие раунды.',
+  'title.home': 'Наведи и убери',
+  'title.scan': 'Уборка — Наведи и убери',
+  'title.collection': 'Коллекция — Наведи и убери',
+  'title.shop': 'Магазин — Наведи и убери',
+  'title.children': 'Дети — Наведи и убери',
+  'title.house': 'Дом — Наведи и убери',
+  'title.reference': 'Эталоны — Наведи и убери',
+  'title.cards': 'Карточки — Наведи и убери',
+  'title.rewards': 'Награды — Наведи и убери',
+
+  'common.back': '← Назад',
+  'common.backToList': '← К списку',
+  'common.loading': 'Загрузка…',
+  'common.copy': 'Скопировать',
+  'common.save': 'Сохранить',
+  'common.delete': 'Удалить',
+  'common.remove': 'Убрать',
+  'common.add': 'Добавить',
+  'common.retake': 'Переснять',
+  'common.somethingWrong': 'Что-то пошло не так',
+  'common.noConnection': 'Не удалось сохранить — проверь связь',
+  'common.language': 'Язык',
+
+  'err.copyThis': '⚠️ Ошибка — скопируй мне этот текст:',
+  'err.realProject': 'РЕАЛЬНЫЙ project: ',
+  'err.uid': 'uid (вошёл?): ',
+  'err.uidNone': 'НЕТ — не авторизован',
+  'err.step': 'шаг: ',
+  'err.badCredentials': 'Неверный email или пароль',
+  'err.emailInUse': 'Такой email уже зарегистрирован',
+  'err.providerOff': 'Провайдер входа не включён в Firebase Auth',
+  'err.permissionDenied': 'Firestore отклонил запись{where}. Проверь, что правила опубликованы в проекте help-me-clean-7969f.',
+
+  'login.sub': 'Вход для родителя. Дети потом выбирают себя сами — им аккаунт не нужен.',
+  'login.email': 'Email',
+  'login.password': 'Пароль',
+  'login.signIn': 'Войти',
+  'login.register': 'Зарегистрироваться',
+  'login.toRegister': 'Нет аккаунта? Зарегистрироваться',
+  'login.toSignIn': 'Уже есть аккаунт? Войти',
+  'login.or': 'или',
+  'login.google': 'Войти через Google',
+  'login.needBoth': 'Введи email и пароль',
+
+  'profiles.title': 'Кто убирается?',
+  'profiles.empty': 'Профилей пока нет — зайди в родительскую часть и добавь ребёнка.',
+  'profiles.parentArea': '👑 Родителям',
+  'profiles.child': 'Ребёнок',
+  'profiles.locked': '🔒 код',
+  'profiles.open': 'без кода',
+
+  'pin.fourDigits': 'Четыре цифры',
+  'pin.go': 'Войти',
+  'pin.mustBe4': 'Код — 4 цифры',
+  'pin.wrong': 'Не тот код, попробуй ещё раз',
+  'pin.yourCode': 'Твой код',
+  'pin.childTitle': '{avatar} {name} — твой код',
+  'pin.childSub': 'Введи свои четыре цифры',
+  'pin.parentTitle': '👑 Родительский код',
+  'pin.parentSub': 'Четыре цифры, которые знают взрослые',
+
+  'who.title': 'Кто ты сегодня?',
+  'who.sub': 'Можно выбирать по-разному каждый день. Всё, что ты накопил, останется с тобой.',
+
+  'child.changeWho': 'Сменить, кто я',
+  'child.notMe': 'Это не я',
+  'child.clean': '🧹 Убирать!',
+  'child.collection': '🃏 Моя коллекция',
+  'child.shop': '🎁 Магазин',
+  'child.greeting': 'Привет',
+  'child.stats': '{emoji} Можно потратить: {currency}   ·   Заработано всего: {earned}   ·   Карточки {theme}: {cards}   ·   Уборок: {cleanups} ({rank})',
+  'child.statsFailed': 'Не удалось загрузить — проверь связь.',
+
+  'parent.defaultFamily': 'Наш дом',
+  'parent.toProfiles': '← К профилям',
+  'parent.signOut': 'Выйти из аккаунта',
+  'parent.role': '👑 Родитель',
+  'parent.familyCode': 'Код семьи:',
+  'parent.codeCopied': 'Код скопирован',
+  'parent.codeCopyFailed': 'Не удалось скопировать',
+  'parent.nav.home': '🏠 Дом',
+  'parent.nav.children': '🧒 Дети',
+  'parent.nav.reference': '📸 Эталоны',
+  'parent.nav.cards': '🃏 Карточки',
+  'parent.nav.rewards': '🎁 Награды',
+  'parent.pin.title': 'Родительский код',
+  'parent.pin.titleUnset': 'Родительский код не задан',
+  'parent.pin.hintLocked': 'Взрослая часть под кодом. Здесь можно его сменить.',
+  'parent.pin.hintOpen': 'Пока кода нет, ребёнок может зайти сюда и, например, поменять цены в магазине. Задай код — это четыре цифры.',
+  'parent.pin.set': 'Задать код',
+  'parent.pin.change': 'Сменить код',
+  'parent.pin.clear': 'Снять код',
+  'parent.pin.saved': 'Код сохранён',
+  'parent.pin.saveFailed': 'Не удалось сохранить код',
+  'parent.pin.cleared': 'Код снят',
+  'parent.pin.clearFailed': 'Не удалось снять код',
+  'parent.pin.confirmClear': 'Снять родительский код? Взрослая часть станет открытой для всех.',
+  'parent.profilesTitle': 'Профили детей',
+  'parent.profilesEmpty': 'Пока нет — добавь на экране «Дети».',
+  'parent.joinNote': 'Дальше по ТЗ: join второго взрослого по коду через Worker.',
+  'parent.lang.title': 'Язык',
+  'parent.lang.hint': 'Действует на всё приложение на этом планшете — детские экраны, раунд уборки и то, что говорит помощник.',
+  'parent.lang.saved': 'Язык переключён на русский',
+  'parent.lang.familyFailed': 'Язык переключён на этом планшете, но не сохранён для семьи',
+
+  'children.title': 'Дети',
+  'children.intro': 'Профиль — это просто имя и аватар на этом планшете: отдельный аккаунт ребёнку не нужен. Код (4 цифры) нужен, только чтобы дети не заходили друг к другу. Малышу, который цифры ещё не помнит, код можно не ставить.',
+  'children.listTitle': 'Профили',
+  'children.empty': 'Пока никого. Добавь первого ниже.',
+  'children.addTitle': 'Добавить ребёнка',
+  'children.avatarTitle': 'Аватар',
+  'children.namePlaceholder': 'Имя (напр. Майя)',
+  'children.pinPlaceholder': 'Код (можно без)',
+  'children.addNote': 'Кем быть — Миньоном или Джедаем — ребёнок выбирает сам при каждом входе. Искорки и прогресс общие, у каждого образа своя коллекция карточек.',
+  'children.lastTime': ', в прошлый раз: {theme}',
+  'children.setPin': 'Задать код',
+  'children.changePin': 'Сменить код',
+  'children.clearPin': 'Снять код',
+  'children.promptPin': 'Новый код для «{name}» — 4 цифры:',
+  'children.pinSaved': 'Код сохранён',
+  'children.pinSaveFailed': 'Не удалось сохранить код',
+  'children.confirmClearPin': 'Снять код с профиля «{name}»? В него сможет зайти любой на этом планшете.',
+  'children.pinCleared': 'Код снят',
+  'children.pinClearFailed': 'Не удалось снять код',
+  'children.confirmDelete': 'Удалить профиль «{name}»? Искорки, коллекция и история уборок пропадут.',
+  'children.deleted': 'Профиль удалён',
+  'children.deleteFailed': 'Не удалось удалить',
+  'children.needName': 'Введи имя',
+  'children.pinExactly4': 'Код — ровно 4 цифры',
+  'children.pinExactly4OrEmpty': 'Код — ровно 4 цифры (или оставь поле пустым)',
+  'children.added': 'Профиль «{name}» добавлен',
+  'children.addFailed': 'Не удалось добавить профиль',
+};
+
+Object.assign(RU, {
+  'house.title': 'Дом',
+  'house.describe': 'Опиши свой дом одним текстом — приложение построит карту комнат. Можно как угодно, своими словами.',
+  'house.placeholder': 'У нас двухэтажный дом. Внизу прихожая, кухня, столовая, гостиная и туалет. Наверху спальня родителей, комната Майи, комната мальчиков, ванная и детская ванная. Ещё есть прачечная и гараж.',
+  'house.build': 'Построить карту',
+  'house.building': 'Строю карту…',
+  'house.tooShort': 'Опиши дом чуть подробнее',
+  'house.parseFailed': 'Не удалось разобрать — попробуй иначе',
+  'house.scannerResting': 'Сканер отдыхает до завтра',
+  'house.confirm': 'Проверь и поправь: переименуй комнаты, задай эмодзи и тип, удали лишнее. Ничего не создаётся молча.',
+  'house.addFloor': '+ Этаж',
+  'house.toRoute': 'Дальше: маршрут →',
+  'house.floorName': 'Название этажа',
+  'house.deleteFloor': 'Удалить этаж',
+  'house.roomName': 'Комната',
+  'house.addRoom': '+ Комната',
+  'house.floorN': 'Этаж {n}',
+  'house.routeIntro': 'Порядок обхода. Отметь «домашнюю» комнату — с неё начинается уборка (там мотивация выше). Стрелками поменяй порядок.',
+  'house.backToRooms': '← Комнаты',
+  'house.saveMap': 'Сохранить карту',
+  'house.noRooms': 'Нет комнат — вернись и добавь.',
+  'house.needOneRoom': 'Добавь хотя бы одну комнату с названием',
+  'house.saved': 'Карта сохранена',
+  'house.saveFailed': 'Не удалось сохранить',
+
+  'reference.title': 'Эталоны',
+  'reference.intro': 'Эталон — фото поверхности, <strong>какой она должна быть убранной</strong>. Проверка сравнивает детское «после» с ним, а не с идеалом из головы модели: у каждой семьи свой порядок. Без эталона уборка работает — просто проверка мягче.',
+  'reference.coverage': 'Снято {covered} из {total}{all}',
+  'reference.coverageAll': ' — все комнаты',
+  'reference.noRooms': 'Комнат пока нет',
+  'reference.noHome': 'Сначала создай карту дома на экране «Дом».',
+  'reference.room': 'Комната',
+  'reference.taken': 'Эталон снят',
+  'reference.missing': 'Эталона нет — проверка будет мягче',
+  'reference.shoot': 'Снять эталон',
+  'reference.shootHint': 'Убери поверхность так, как считаешь правильным, и сними её. С того же ракурса, с какого будет снимать ребёнок.',
+  'reference.overlay': 'Наведи на убранный стол или полку',
+  'reference.takePhoto': '📷 Сделать фото',
+  'reference.previewTitle': 'Так и должно быть убрано?',
+  'reference.save': 'Сохранить эталон',
+  'reference.confirmDelete': 'Удалить эталон для «{name}»?',
+  'reference.deleted': 'Эталон удалён',
+  'reference.captureFailed': 'Не получилось снять — попробуй ещё раз',
+  'reference.saved': 'Эталон сохранён',
+  'reference.saveFailed': 'Не удалось сохранить эталон',
+  'reference.storageDenied': 'Storage отклонил загрузку — проверь правила',
+
+  'cards.title': 'Карточки коллекции',
+  'cards.intro': 'За подтверждённую уборку ребёнок получает одну карточку из этого набора. Что это будет — решаете вы: наклейки, рисунки, кадры из мультика, семейные фото. Карточка принадлежит образу: у Миньона своя витрина, у Джедая своя, «для обоих» выпадает в любом.',
+  'cards.add': '+ Добавить карточку',
+  'cards.empty': 'Пока пусто. Без карточек уборка работает — просто в конце не будет награды-карточки.',
+  'cards.summary': 'Всего {total} · {byTheme} · для обоих: {any}',
+  'cards.none': 'Карточек пока нет',
+  'cards.newTitle': 'Новая карточка',
+  'cards.newHint': 'Сфотографируйте наклейку или рисунок — или выберите готовый файл.',
+  'cards.pickFile': '🖼 Выбрать файл',
+  'cards.metaTitle': 'Как её зовут?',
+  'cards.namePlaceholder': 'Название (например, «Кевин»)',
+  'cards.whichTheme': 'В каком образе она выпадает?',
+  'cards.anotherPhoto': 'Другое фото',
+  'cards.forBoth': '🎲 Для обоих',
+  'cards.unnamed': 'Без названия',
+  'cards.confirmDelete': 'Удалить карточку из набора? У детей уже добытые останутся.',
+  'cards.deleted': 'Карточка удалена',
+  'cards.deleteFailed': 'Не удалось удалить',
+  'cards.captureFailed': 'Не получилось — попробуйте другое фото',
+  'cards.needName': 'Дайте карточке имя — ребёнок будет его называть',
+  'cards.added': 'Карточка добавлена',
+  'cards.storageDenied': 'Storage отклонил загрузку — проверьте правила',
+  'cards.shoot': 'Снять',
+
+  'rewards.title': 'Реальные награды',
+  'rewards.intro': 'На что ребёнок меняет искорки в реальной жизни. Покупка списывает баланс, но <strong>не трогает заработанное за всё время</strong> — ранг и статус от трат не падают. Купленное попадает к вам в очередь на выдачу.',
+  'rewards.queueTitle': 'Ждут выдачи',
+  'rewards.queueEmpty': 'Пусто — никто ничего не купил.',
+  'rewards.shopTitle': 'Что можно купить',
+  'rewards.shopEmpty': 'Пока пусто — искорки копятся, но потратить их не на что.',
+  'rewards.photoTitle': 'Загрузить фото награды',
+  'rewards.photoCap': '📷 фото',
+  'rewards.namePlaceholder': 'Например, «Мороженое»',
+  'rewards.costPlaceholder': 'Цена ✨',
+  'rewards.uploading': 'Загружаю…',
+  'rewards.emojiHint': 'эмодзи — если фото нет',
+  'rewards.dropPhoto': 'Убрать фото',
+  'rewards.pricingHint': 'Ориентир: уборка комнаты с проверкой — примерно 8–12 искорок. Ставьте цены так, чтобы ближняя награда бралась за 2–3 уборки, а крупная — за неделю.',
+  'rewards.otherPhoto': 'Другое фото',
+  'rewards.photo': '📷 Фото',
+  'rewards.confirmDelete': 'Убрать награду с витрины? Уже купленное у детей останется.',
+  'rewards.photoUpdated': 'Фото обновлено',
+  'rewards.photoFailed': 'Не удалось загрузить фото',
+  'rewards.photoFailedWhere': 'Фото не загрузилось',
+  'rewards.removed': 'Убрано с витрины',
+  'rewards.removeFailed': 'Не удалось убрать',
+  'rewards.removeFailedWhere': 'Не удалось убрать награду',
+  'rewards.forChild': '— {name}, за ✨ {cost}',
+  'rewards.give': 'Выдал',
+  'rewards.given': 'Отмечено как выданное',
+  'rewards.giveFailed': 'Не удалось отметить',
+  'rewards.giveFailedWhere': 'Не удалось отметить выдачу',
+  'rewards.stillLoading': 'Секунду, страница ещё загружается',
+  'rewards.needName': 'Напишите, что это за награда',
+  'rewards.needCost': 'Цена — целое число искорок, от 1',
+  'rewards.added': 'Награда добавлена',
+  'rewards.addedWithPhoto': 'Награда с фото добавлена',
+  'rewards.addFailed': 'Не удалось сохранить',
+  'rewards.addFailedWhere': 'Награда не сохранилась',
+  'rewards.fileFailed': 'Не получилось прочитать файл — попробуйте другой',
+  'rewards.errStorage': 'Storage отклонил загрузку фото — проверьте, что опубликованы storage.rules и выдана IAM-роль (консоль просит её при публикации).',
+  'rewards.errRules': 'Похоже, правила Firestore не переопубликованы после появления витрины наград. Firebase Console → Firestore Database → Rules → вставить firestore.rules из репозитория → Publish.',
+  'rewards.errOffline': 'Нет связи с базой — проверьте интернет.',
+  'rewards.errGeneric': 'ошибка',
+  'rewards.noFamily': 'Семья не найдена',
+  'rewards.noFamilyMsg': 'Не удалось определить семью — зайдите на главную и войдите заново.',
+  'rewards.shopFailed': 'Витрина не загрузилась',
+
+  'shop.title': 'Магазин',
+  'shop.toSpend': 'можно потратить',
+  'shop.toSpendEmoji': '{emoji} можно потратить',
+  'shop.earnedTotal': 'заработано всего',
+  'shop.yourRank': 'твой ранг',
+  'shop.note': 'Покупка тратит только левое число. Заработанное и ранг остаются с тобой навсегда.',
+  'shop.pendingTitle': 'Ждёт, когда родители выдадут',
+  'shop.pending': '— куплено, ждём',
+  'shop.empty': 'Родители ещё не придумали, на что менять искорки.',
+  'shop.buy': 'Купить',
+  'shop.missing': 'Ещё {n}',
+  'shop.goal': 'Ещё {n} {emoji} — и будет «{name}»',
+  'shop.enoughForAll': 'Тебе хватает на всё, что есть!',
+  'shop.confirmBuy': 'Купить «{name}» за {cost}?',
+  'shop.notEnough': 'Пока не хватает — убери ещё',
+  'shop.buyFailed': 'Не получилось',
+  'shop.bought': '«{name}» куплено! Покажи родителям.',
+  'shop.saveFailed': 'Не удалось записать покупку — проверь связь',
+
+  'collection.title': 'Моя коллекция',
+  'collection.count': '{got} из {total}',
+  'collection.none': 'Карточек пока нет',
+  'collection.hintNone': 'Родители ещё не добавили карточки.',
+  'collection.hintComplete': 'Ты собрал всё! 🎉',
+  'collection.hintMore': 'Каждая уборка с проверкой приносит новую карточку.',
+  'collection.locked': 'Ещё не твоя',
+});
+
+Object.assign(RU, {
+  'scan.exit': '← Выйти',
+  'scan.room': 'Комната',
+  'scan.tidying': 'Уборка',
+  'scan.music': '🎵 Музыка',
+  'scan.estimate': '≈ {n} мин',
+  'scan.roomTitle': 'С чего начнём?',
+  'scan.roomHint': 'Выбери комнату — начинать лучше со своей.',
+  'scan.noHomeMap': 'Карта дома ещё не создана — можно убирать и без неё.',
+  'scan.roomDoneToday': 'на сегодня всё',
+  'scan.roomCountToday': 'сегодня уборок: {n}',
+  'scan.roomNoneToday': 'сегодня ещё не убирали',
+  'scan.modeTitle': 'Что убираем?',
+  'scan.modeTitleRoom': '{room}: что убираем?',
+  'scan.modeCloseup': 'Стол или полка',
+  'scan.modeOverview': 'Вся комната',
+  'scan.otherRoom': '← Другая комната',
+  'scan.camHintCloseup': 'Наведи камеру на стол или полку — и жми большую кнопку',
+  'scan.camHintOverview': 'Встань у двери и покажи всю комнату целиком — и жми большую кнопку',
+  'scan.camHintZone': 'Подойди к «{zone}» и сфоткай поближе — чтобы было видно каждую вещь',
+  'scan.takePhoto': '📷 Сделать фото',
+  'scan.tidyAnyway': '← Уберу и так',
+  'scan.thinking': 'Смотрю, что тут у тебя…',
+  'scan.counting': 'Считаю, что осталось…',
+  'scan.thinkingBonus': 'Смотрю, что получилось…',
+  'scan.thinkingSub': 'Это займёт пару секунд',
+  'scan.briefTitleBig': 'Ого! Тут есть работа',
+  'scan.briefTitleSmall': 'Так, посмотрим…',
+  'scan.briefLead': 'Думаю, тебе предстоит:',
+  'scan.briefLeadMinutes': 'Думаю, тебе предстоит (минут на {n}):',
+  'scan.briefReward': 'Если уберёшь всю комнату с моей помощью — заработаешь не меньше {n} {emoji}!',
+  'scan.briefRewardLimited': 'Тут {zones} мест и {steps} шагов.',
+  'scan.briefGo': 'Начнём по шагам!',
+  'scan.briefRetake': 'Снять комнату заново',
+  'scan.briefSay': 'Ого! Если уберёшь всю комнату, заработаешь не меньше {n}. Думаю, тебе предстоит: {plan}. Начнём по шагам?',
+  'scan.briefSayLimited': 'Тут {zones} мест: {plan}. Начнём по шагам?',
+  'scan.stepOf': 'Шаг {n} из {of}',
+  'scan.zoneOf': 'Очаг {n} из {of}',
+  'scan.stepInZone': '{zone}: шаг {n} из {of}',
+  'scan.done': 'Готово ✓',
+  'scan.tidied': 'Убрал ✓',
+  'scan.goCloseup': '📷 Подойти и сфоткать',
+  'scan.tidyAnywayDone': 'Уберу и так ✓',
+  'scan.skipCloseup': 'Тут чисто, пропустить',
+  'scan.skipItem': 'Тут такого нет',
+  'scan.hintCloseup': 'Тут мелочи, издалека не разобрать. Подойди — и я подскажу по шагам.',
+  'scan.hintOverview': 'Убрал — жми по кружку или по кнопке. Крестик — если тут ничего нет.',
+  'scan.hintItems': 'Отмечай вещи пальцем — или сразу «Готово». Крестик у вещи — если её тут нет.',
+  'scan.hintDefault': 'Можно отмечать вещи пальцем — или сразу «Готово».',
+  'scan.noneHere': 'тут ничего нет',
+  'scan.notThere': 'тут этого нет',
+  'scan.okNothingHere': 'Ладно, тут и правда ничего нет',
+  'scan.surprise': 'Сюрприз!',
+  'scan.roomClean': 'В комнате чисто! Попробуй другую.',
+  'scan.spotClean': 'Тут уже чисто! Наведи на другое место.',
+  'scan.zoneClean': 'Тут и правда чисто — идём дальше',
+  'scan.scannerResting': 'Сканер отдыхает до завтра',
+  'scan.lookFailed': 'Не получилось разглядеть — сними ещё раз',
+  'scan.lookFailedZone': 'Не получилось разглядеть — убери как видишь',
+  'scan.tooDark': 'Темновато — включи свет и сними ещё раз',
+  'scan.sayCloseup': '{title}. Подойди поближе и сфотографируй.',
+  'scan.sayItems': '{instruction}. Их {n}.',
+  'scan.sayZoneCloseup': 'Подойди к {zone} и сфотографируй поближе',
+  'scan.afterTitle': 'Покажи, что получилось!',
+  'scan.afterSub': 'Сфотографируй то же место с того же ракурса.',
+  'scan.stepOut': 'Отойди из кадра и сними ещё раз',
+  'scan.surfaceUnclear': 'Не разглядел поверхность — сними её целиком',
+  'scan.badFrame': 'Кадр не получился — сними ещё раз',
+  'scan.recheckTitle': 'Да ты почти у цели!',
+  'scan.recheckSame': 'Хм, тут всё как было',
+  'scan.recheckStartWith': 'Начни с этого: {what}.',
+  'scan.recheckLeftOnly': 'Осталось только {what}.',
+  'scan.recheckGeneric': 'Убери то, что я обвёл красным, — и снимем заново.',
+  'scan.recheckOverReference': 'На фото ещё {after} лишних вещей, а на эталоне родителей — {reference}.',
+  'scan.recheckCount': 'Вижу {n} лишних вещей. Оставить можно не больше {others}, и мусора — ни одной штуки.',
+  'scan.recheckGo': 'Убрал! Снять ещё раз',
+  'scan.recheckKeep': 'Искорки за шаги уже твои — они никуда не денутся.',
+  'scan.donePraise': 'Готово!',
+  'scan.doneForThis': '{emoji} за эту уборку',
+  'scan.doneTime': 'на уборку',
+  'scan.doneItems': 'убрано вещей',
+  'scan.doneNote': 'Бонус за комнату — за полностью убранную: без мусора и не больше {others} лишних вещей. Искорки за шаги остаются с тобой.',
+  'scan.doneTotals': 'Всего у тебя: {emoji} {currency} · заработано за всё время: {earned} · уборок: {cleanups}',
+  'scan.doneSaveFailed': 'Искорки засчитаны, но записать не вышло — проверь связь.',
+  'scan.cardWin': 'Новая карточка!',
+  'scan.cardNew': 'Новая карточка',
+  'scan.cardSay': 'Новая карточка: {name}',
+  'scan.wholeCollection': 'Вся коллекция →',
+  'scan.again': 'Ещё одно место',
+  'scan.goHome': 'Домой',
+  'scan.bonusGo': 'Сделаю!',
+  'scan.bonusSkip': 'Не сейчас',
+  'scan.bonusCancel': '← Не сейчас',
+  'scan.bonusShotTitle': 'Покажи, как ты это делаешь',
+  'scan.bonusOverlay': 'Себя и свои руки снимать МОЖНО — так и надо',
+  'scan.bonusPrice': '+{n} {emoji}',
+  'scan.bonusFallbackPraise': 'Отлично!',
+  'scan.bonusNotSeen': 'Не видно того, о чём просили — попробуй ещё раз',
+  'scan.bonusAlready': 'Это задание сегодня уже засчитано',
+  'scan.bonusCounted': 'Засчитано!',
+  'scan.bonusAward': '+{n} {currency}!',
+  'scan.bonusSaveFailed': 'Искорки засчитаны, но записать не вышло',
+  'scan.savingSparkles': 'Сохраняю искорки…',
+  'scan.placeLimitNote': '{place} сегодня уже убирали {limit} раза — искорок и карточки за него сегодня не будет. Другое место в этой комнате считается.',
+  'scan.placeThis': 'Это место',
+  'scan.placeNamed': '«{place}»',
+  'scan.limitPlace': '{place} сегодня уже убирали {limit} раза — искорки за него сегодня всё. Завтра снова.',
+  'scan.limitRoom': 'В этой комнате сегодня уже {limit} уборок — искорки за неё сегодня всё. Завтра снова.',
+  'scan.roomLimitAhead': 'В этой комнате сегодня уже {limit} уборок — искорок за неё сегодня больше не будет. Убрать всё равно можно, завтра снова считается.',
+  'scan.verifyFallbackPraise': 'Молодец!',
+});
+
+Object.assign(RU, {
+  'action.paper.instruction': 'Собери все бумаги в одну стопку',
+  'action.paper.target': 'На край стола',
+  'action.stationery.instruction': 'Поставь карандаши и ручки в стакан',
+  'action.stationery.target': 'Стакан',
+  'action.trash.instruction': 'Выброси мусор',
+  'action.trash.target': 'Ведро',
+  'action.dishes.instruction': 'Отнеси посуду',
+  'action.dishes.target': 'Кухня',
+  'action.textile.instruction': 'Текстиль: грязное в корзину, чистое на место',
+  'action.textile.target': 'Корзина или полка',
+  'action.toys.instruction': 'Игрушки в свой ящик',
+  'action.toys.target': 'Ящик',
+  'action.floor.instruction': 'Освободи пол: коробки, сумки, провода — по местам',
+  'action.floor.target': 'Полка, шкаф, под стол',
+  'action.make_bed.instruction': 'Заправь кровать или ровно накрой одеялом',
+  'action.make_bed.target': 'Кровать',
+  'action.belongs_elsewhere.instruction': 'Эта вещь здесь не живёт. Вспомни, где её место, и отнеси',
+  'action.belongs_elsewhere.target': 'Туда, где она живёт',
+  'action.bin_full.instruction': 'Урна полная — вынеси её',
+  'action.bin_full.target': 'Мусорное ведро на кухне',
+
+  'zone.chair.name': 'стул',
+  'zone.chair.plan': 'убрать вещи со стула',
+  'zone.floor.name': 'пол',
+  'zone.floor.plan': 'очистить пол от лишнего',
+  'zone.bed.name': 'кровать',
+  'zone.bed.plan': 'заправить кровать',
+  'zone.desk.name': 'стол',
+  'zone.desk.plan': 'навести порядок на столе',
+  'zone.shelf.name': 'полка',
+  'zone.shelf.plan': 'разобрать полку',
+  'zone.surface.name': 'поверхность',
+  'zone.surface.plan': 'освободить поверхность',
+  'zone.wipe.name': 'протереть',
+  'zone.wipe.plan': 'протереть поверхность',
+  'zone.wipe.instruction': 'Протри поверхность',
+  'zone.wipe.target': 'Тряпкой или влажной салфеткой',
+  'zone.bin.name': 'мусор',
+  'zone.bin.plan': 'вынести мусор',
+  'zone.other.name': 'ещё',
+  'zone.other.plan': 'убрать лишнее',
+  'zone.fallbackLabel': 'поверхность',
+  'zone.wipeAction': 'протри {label}',
+  'zone.tidyHere': 'Убери здесь',
+
+  'roomType.kitchen': 'Кухня',
+  'roomType.bedroom_child': 'Детская',
+  'roomType.bathroom': 'Ванная',
+  'roomType.living': 'Гостиная',
+  'roomType.hall': 'Прихожая',
+  'roomType.utility': 'Хозяйственная',
+  'roomType.other': 'Другое',
+
+  'theme.minion.label': 'Миньон',
+  'theme.minion.currencyName': 'бананы',
+  'theme.minion.praiseWord': 'Банана!',
+  'theme.jedi.label': 'Джедай',
+  'theme.jedi.currencyName': 'кристаллы',
+  'theme.jedi.praiseWord': 'Ты справился.',
+
+  'rank.1': 'Юнлинг',
+  'rank.2': 'Падаван',
+  'rank.3': 'Рыцарь',
+  'rank.4': 'Мастер',
+
+  'tidy.standard.1': 'Пустая поверхность — норма. На столе, полке, тумбе, подоконнике не должно оставаться ничего лишнего.',
+  'tidy.standard.2': 'Исключение — письменный стол: на нём допустимы ОДНА стопка бумаг и ОДНА настольная лампа. Всё остальное убирается.',
+  'tidy.standard.3': 'На стульях не должно быть вещей: стул — чтобы сидеть, а не чтобы класть.',
+  'tidy.standard.4': 'Кровать заправлена или ровно накрыта одеялом, без комков и свисающего белья.',
+  'tidy.standard.5': 'На полу не место коробкам, ящикам, сумкам, проводам и удлинителям — пол свободен.',
+  'tidy.standard.6': 'Полная урна (особенно с бумагами) — это отдельная задача: её выносят.',
+
+  'verify.limits.1': 'Мусора (фантики, бумажки, упаковки, огрызки) на поверхности не должно остаться НИ ОДНОГО.',
+  'verify.limits.2': 'Прочих посторонних предметов — не больше {others} суммарно на всю поверхность.',
+  'verify.limits.3': 'Считается пол, стол, тумбочка, подоконник, столешница в кухне и ванной.',
+  'verify.limits.4': 'Мебель, техника, настольная лампа и ОДНА стопка бумаг на письменном столе — это норма, их не считай.',
+
+  'seen.plant': 'plant — комнатное растение в горшке',
+  'seen.mirror': 'mirror — зеркало',
+  'seen.shoes': 'shoes — обувь на полу или на полке',
+  'seen.books': 'books — книги на полке или стопкой',
+
+  'bonus.dust.title': 'Вытри пыль тряпочкой',
+  'bonus.dust.hint': 'Протри стол или полку — и сфоткай свою руку с тряпкой прямо на ней',
+  'bonus.dust.check': 'рука ребёнка с тряпкой, салфеткой или влажной губкой на столе, полке или тумбе',
+  'bonus.sweep.title': 'Подмети или пропылесось пол',
+  'bonus.sweep.hint': 'Возьми веник или пылесос и сфоткай себя за работой',
+  'bonus.sweep.check': 'ребёнок держит веник, щётку, швабру или пылесос, и видно пол — идёт уборка пола',
+  'bonus.laundry.title': 'Отнеси грязное в стирку',
+  'bonus.laundry.hint': 'Сложи грязные вещи в корзину или стиральную машину и сфоткай',
+  'bonus.laundry.check': 'детские руки кладут одежду или полотенца в корзину для белья либо в стиральную машину',
+  'bonus.plants.title': 'Полей цветок',
+  'bonus.plants.hint': 'Полей растение и сфоткай лейку или стакан у самого горшка',
+  'bonus.plants.check': 'лейка, бутылка или стакан с водой рядом с комнатным растением, вода льётся или собирается литься',
+  'bonus.mirror.title': 'Протри зеркало или кран до блеска',
+  'bonus.mirror.hint': 'Протри зеркало или кран и сфоткай руку с тряпкой на нём',
+  'bonus.mirror.check': 'рука с тряпкой или салфеткой на зеркале, кране или раковине',
+  'bonus.shoes.title': 'Поставь обувь ровным рядом',
+  'bonus.shoes.hint': 'Выстрой обувь в ряд и сфоткай сверху',
+  'bonus.shoes.check': 'обувь стоит аккуратным ровным рядом или парами, носками в одну сторону',
+  'bonus.books.title': 'Выровняй книги на полке',
+  'bonus.books.hint': 'Поставь книги ровно, корешками наружу — и сфоткай полку',
+  'bonus.books.check': 'книги на полке стоят ровно, корешками наружу, без завалов и стопок поперёк',
+
+  'camera.notAllowed': 'Камера не разрешена — можно снять фото кнопкой.',
+  'camera.notFound': 'Камера не найдена — сними фото кнопкой.',
+  'camera.unavailable': 'Камера недоступна — сними фото кнопкой.',
+
+  'round.taskRoom': 'убрать комнату',
+  'round.taskSurface': 'убрать поверхность',
+
+  'missed.and': 'и',
+  'missed.putAway': 'убрать: {label}',
+
+  'ai.error': 'Ошибка ИИ ({status})',
+});
+
+export const DICT = { en: EN, ru: RU };
+
+// ── DOM ─────────────────────────────────────────────────────────────────────
+// Разметка помечается атрибутами, а не переводится в скрипте: так видно прямо в
+// HTML, какая строка откуда берётся, и ни один экран не может «забыть» перевод.
+//   data-i18n="key"              → textContent
+//   data-i18n-html="key"         → innerHTML (для строк с <strong>)
+//   data-i18n-placeholder="key"  → placeholder
+//   data-i18n-title="key"        → title
+//   data-i18n-aria-label="key"   → aria-label
+const ATTR_MAP = [
+  ['data-i18n-placeholder', 'placeholder'],
+  ['data-i18n-title', 'title'],
+  ['data-i18n-aria-label', 'aria-label'],
+];
+
+export function applyI18n(root) {
+  if (typeof document === 'undefined') return;
+  const scope = root || document;
+  document.documentElement.lang = current;
+  const title = document.querySelector('title[data-i18n]');
+  if (title) document.title = t(title.dataset.i18n);
+  scope.querySelectorAll('[data-i18n]').forEach(el => {
+    if (el.tagName === 'TITLE') return;
+    el.textContent = t(el.dataset.i18n);
+  });
+  scope.querySelectorAll('[data-i18n-html]').forEach(el => {
+    el.innerHTML = t(el.getAttribute('data-i18n-html'));
+  });
+  for (const [attr, prop] of ATTR_MAP) {
+    scope.querySelectorAll(`[${attr}]`).forEach(el => el.setAttribute(prop, t(el.getAttribute(attr))));
+  }
+}
+
+// Кнопки-переключатели языка: рисуем по одному чипу на язык, текущий — активный.
+// onPick получает выбранный язык; сохранение и перерисовку решает экран.
+export function renderLangSwitch(el, onPick) {
+  if (!el) return;
+  el.innerHTML = LANGS.map(l =>
+    `<button type="button" class="btn btn-ghost lang-btn${l === current ? ' on' : ''}" data-lang="${l}">${LANG_CHIPS[l]}</button>`).join('');
+  el.querySelectorAll('[data-lang]').forEach(btn => {
+    btn.onclick = () => onPick(btn.dataset.lang);
+  });
+}
+
+// Экраны, которые не умеют перерисовать себя целиком (scan, shop, cards…),
+// после смены языка просто перезагружаются: страница статическая, состояние
+// живёт в localStorage — терять нечего.
+export function applyOrReload() {
+  if (typeof location === 'undefined') return;
+  location.reload();
+}

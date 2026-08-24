@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Награды — Наведи и убери</title>
+  <title data-i18n="title.rewards">Rewards — Point &amp; Tidy</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#3A5DA8">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -30,49 +30,42 @@
 </head>
 <body>
   <div class="wrap col">
-    <a class="back" href="index.html">← Назад</a>
-    <h1>Реальные награды</h1>
-    <p class="muted">
-      На что ребёнок меняет искорки в реальной жизни. Покупка списывает баланс,
-      но <strong>не трогает заработанное за всё время</strong> — ранг и статус от трат
-      не падают. Купленное попадает к вам в очередь на выдачу.
-    </p>
+    <a class="back" href="index.html" data-i18n="common.back">← Back</a>
+    <h1 data-i18n="rewards.title">Real rewards</h1>
+    <p class="muted" data-i18n-html="rewards.intro"></p>
 
     <!-- Очередь: что дети купили и ждут. -->
     <section class="card col" id="queue-box">
-      <strong>Ждут выдачи</strong>
+      <strong data-i18n="rewards.queueTitle">Waiting to be handed over</strong>
       <div id="queue" class="col"></div>
     </section>
 
     <!-- Витрина. -->
     <section class="card col">
-      <strong>Что можно купить</strong>
+      <strong data-i18n="rewards.shopTitle">What can be bought</strong>
       <div id="list" class="col"></div>
       <div class="add-row">
         <!-- Эмодзи или фото — одно место в форме: фото перекрывает эмодзи,
              «Убрать фото» возвращает его обратно. -->
-        <label class="pick-photo" id="pick-photo" title="Загрузить фото награды">
+        <label class="pick-photo" id="pick-photo" data-i18n-title="rewards.photoTitle" title="Upload a photo of the reward">
           <span id="new-emoji-view">🍦</span>
           <img id="new-photo" alt="" hidden>
-          <span class="cap">📷 фото</span>
+          <span class="cap" data-i18n="rewards.photoCap">📷 photo</span>
           <input id="photo-input" type="file" accept="image/*" hidden>
         </label>
-        <input id="new-name" class="field" placeholder="Например, «Мороженое»" maxlength="40">
-        <input id="new-cost" class="field" type="number" min="1" step="1" placeholder="Цена ✨">
-        <button id="btn-add" class="btn btn-primary" disabled>Загружаю…</button>
+        <input id="new-name" class="field" data-i18n-placeholder="rewards.namePlaceholder" placeholder="" maxlength="40">
+        <input id="new-cost" class="field" type="number" min="1" step="1" data-i18n-placeholder="rewards.costPlaceholder" placeholder="">
+        <button id="btn-add" class="btn btn-primary" disabled data-i18n="rewards.uploading">Loading…</button>
       </div>
       <div class="row" style="gap:10px;align-items:center">
         <input id="new-emoji" class="field" value="🍦" maxlength="4" style="width:80px;text-align:center">
-        <span class="muted" style="font-size:14px">эмодзи — если фото нет</span>
-        <button class="btn btn-ghost hidden" id="btn-drop-photo" style="min-height:44px">Убрать фото</button>
+        <span class="muted" style="font-size:14px" data-i18n="rewards.emojiHint">emoji — if there is no photo</span>
+        <button class="btn btn-ghost hidden" id="btn-drop-photo" style="min-height:44px" data-i18n="rewards.dropPhoto">Remove photo</button>
       </div>
       <!-- Что именно пошло не так: «не удалось сохранить» родителю ничего не
            говорит, а причина почти всегда одна и чинится за минуту. -->
       <div id="err" class="card hidden" style="border:2px solid #E53935;font-size:14px"></div>
-      <div class="muted" style="font-size:14px">
-        Ориентир: уборка комнаты с проверкой — примерно 8–12 искорок.
-        Ставьте цены так, чтобы ближняя награда бралась за 2–3 уборки, а крупная — за неделю.
-      </div>
+      <div class="muted" style="font-size:14px" data-i18n="rewards.pricingHint"></div>
     </section>
 
     <div id="toast" class="toast"></div>
@@ -82,16 +75,18 @@
     import {
       initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
       listRealRewards, saveRealReward, deleteRealReward, listAllRewards, saveRewards,
-      getSettings, isParentUnlocked,
+      getSettings, isParentUnlocked, applyFamilyLang,
     } from './js/store.js';
     import { parentAreaLocked } from './js/profile-core.js';
     import { normalizeShop, makeRewardId, pendingPurchases, markGiven } from './js/shop-core.js';
     import { compressCard } from './js/image.js';
+    import { t, applyI18n } from './js/i18n.js';
 
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     let toastTimer;
-    const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); };
+    const toast = (m) => { const el = $('toast'); el.textContent = m; el.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), 2600); };
+    applyI18n();
 
     let fid = null, shop = [], children = [];
     // Выбранное, но ещё не сохранённое фото новой награды: {blob, url, w, h}.
@@ -104,19 +99,17 @@
     function setReady(on) {
       ready = on;
       $('btn-add').disabled = !on;
-      $('btn-add').textContent = on ? 'Добавить' : 'Загружаю…';
+      $('btn-add').textContent = t(on ? 'common.add' : 'rewards.uploading');
     }
 
     // Ошибку показываем как есть: код Firestore — единственное, по чему
     // понятно, чинить правила, связь или что-то третье.
     function showError(where, e) {
       const code = e?.code || e?.name || '';
-      const hint = code === 'storage/unauthorized'
-        ? 'Storage отклонил загрузку фото — проверьте, что опубликованы storage.rules и выдана IAM-роль (консоль просит её при публикации).'
-        : code === 'permission-denied'
-        ? 'Похоже, правила Firestore не переопубликованы после появления витрины наград. Firebase Console → Firestore Database → Rules → вставить firestore.rules из репозитория → Publish.'
-        : (code === 'unavailable' ? 'Нет связи с базой — проверьте интернет.' : '');
-      $('err').innerHTML = `<strong>${esc(where)}</strong><br>${esc(code || 'ошибка')}: ${esc(e?.message || e)}${hint ? `<br><br>${esc(hint)}` : ''}`;
+      const hint = code === 'storage/unauthorized' ? t('rewards.errStorage')
+        : code === 'permission-denied' ? t('rewards.errRules')
+        : (code === 'unavailable' ? t('rewards.errOffline') : '');
+      $('err').innerHTML = `<strong>${esc(where)}</strong><br>${esc(code || t('rewards.errGeneric'))}: ${esc(e?.message || e)}${hint ? `<br><br>${esc(hint)}` : ''}`;
       $('err').classList.remove('hidden');
     }
     const clearError = () => $('err').classList.add('hidden');
@@ -144,7 +137,7 @@
         $('new-photo').hidden = false;
         $('new-emoji-view').hidden = true;
         $('btn-drop-photo').classList.remove('hidden');
-      } catch (err) { console.error(err); toast('Не получилось прочитать файл — попробуйте другой'); }
+      } catch (err) { console.error(err); toast(t('rewards.fileFailed')); }
     };
     $('btn-drop-photo').onclick = dropPhoto;
     $('new-emoji').oninput = () => { $('new-emoji-view').textContent = $('new-emoji').value.trim() || '🎁'; };
@@ -159,12 +152,12 @@
           <div><strong>${esc(it.name)}</strong></div>
           <div class="chip">✨ ${it.cost}</div>
           <div class="row" style="gap:8px">
-            <label class="btn btn-ghost" style="min-height:52px">${it.url ? 'Другое фото' : '📷 Фото'}
+            <label class="btn btn-ghost" style="min-height:52px">${esc(t(it.url ? 'rewards.otherPhoto' : 'rewards.photo'))}
               <input type="file" accept="image/*" class="repic" hidden>
             </label>
-            <button class="btn btn-ghost drop">Убрать</button>
+            <button class="btn btn-ghost drop">${esc(t('common.remove'))}</button>
           </div>
-        </div>`).join('') || '<div class="muted">Пока пусто — искорки копятся, но потратить их не на что.</div>';
+        </div>`).join('') || `<div class="muted">${esc(t('rewards.shopEmpty'))}</div>`;
       $('list').querySelectorAll('[data-reward]').forEach(el => {
         // Фото у уже заведённой награды: заменить проще, чем удалять и создавать
         // заново (цена и название остались бы прежними — терять их незачем).
@@ -180,18 +173,18 @@
             URL.revokeObjectURL(pic.url);
             shop = shop.map(x => (x.id === it.id ? { ...x, ...saved } : x));
             renderShop();
-            toast('Фото обновлено');
-          } catch (err) { console.error(err); toast('Не удалось загрузить фото'); showError('Фото не загрузилось', err); }
+            toast(t('rewards.photoUpdated'));
+          } catch (err) { console.error(err); toast(t('rewards.photoFailed')); showError(t('rewards.photoFailedWhere'), err); }
         };
         el.querySelector('.drop').onclick = async () => {
           const id = el.dataset.reward;
-          if (!confirm('Убрать награду с витрины? Уже купленное у детей останется.')) return;
+          if (!confirm(t('rewards.confirmDelete'))) return;
           try {
             await deleteRealReward(fid, id);
             shop = shop.filter(x => x.id !== id);
             renderShop();
-            toast('Убрано с витрины');
-          } catch (e) { console.error(e); toast('Не удалось убрать'); showError('Не удалось убрать награду', e); }
+            toast(t('rewards.removed'));
+          } catch (e) { console.error(e); toast(t('rewards.removeFailed')); showError(t('rewards.removeFailedWhere'), e); }
         };
       });
     }
@@ -207,13 +200,13 @@
                 ${p.url ? `<img class="thumb" style="width:44px;height:44px" src="${esc(p.url)}" alt="">`
                         : `<span style="font-size:26px">${esc(p.emoji || '🎁')}</span>`}
                 <div><strong>${esc(p.name)}</strong>
-                  <span class="muted">— ${esc(profile.name || profile.id)}, за ✨ ${p.cost}</span></div>
+                  <span class="muted">${esc(t('rewards.forChild', { name: profile.name || profile.id, cost: p.cost }))}</span></div>
               </div>
-              <button class="btn btn-primary give">Выдал</button>
+              <button class="btn btn-primary give">${esc(t('rewards.give'))}</button>
             </div>`);
         }
       }
-      $('queue').innerHTML = rows.join('') || '<div class="muted">Пусто — никто ничего не купил.</div>';
+      $('queue').innerHTML = rows.join('') || `<div class="muted">${esc(t('rewards.queueEmpty'))}</div>`;
       $('queue').querySelectorAll('[data-purchase]').forEach(el => {
         el.querySelector('.give').onclick = async () => {
           const childId = el.dataset.child, purchaseId = el.dataset.purchase;
@@ -225,10 +218,10 @@
             await saveRewards(fid, childId, next);
             entry.rewards = next;
             renderQueue();
-            toast('Отмечено как выданное');
+            toast(t('rewards.given'));
           } catch (e) {
-            console.error(e); toast('Не удалось отметить');
-            showError('Не удалось отметить выдачу', e);
+            console.error(e); toast(t('rewards.giveFailed'));
+            showError(t('rewards.giveFailedWhere'), e);
             el.querySelector('.give').disabled = false;
           }
         };
@@ -236,13 +229,13 @@
     }
 
     $('btn-add').onclick = async () => {
-      if (!ready || !fid) { toast('Секунду, страница ещё загружается'); return; }
+      if (!ready || !fid) { toast(t('rewards.stillLoading')); return; }
       clearError();
       const name = $('new-name').value.trim();
       const cost = parseInt($('new-cost').value, 10);
       const emoji = $('new-emoji').value.trim() || '🎁';
-      if (!name) { toast('Напишите, что это за награда'); $('new-name').focus(); return; }
-      if (!Number.isFinite(cost) || cost < 1) { toast('Цена — целое число искорок, от 1'); $('new-cost').focus(); return; }
+      if (!name) { toast(t('rewards.needName')); $('new-name').focus(); return; }
+      if (!Number.isFinite(cost) || cost < 1) { toast(t('rewards.needCost')); $('new-cost').focus(); return; }
       $('btn-add').disabled = true;
       try {
         const saved = await saveRealReward(
@@ -255,10 +248,10 @@
         $('new-emoji-view').textContent = '🎁';
         dropPhoto();
         renderShop();
-        toast(saved.url ? 'Награда с фото добавлена' : 'Награда добавлена');
+        toast(t(saved.url ? 'rewards.addedWithPhoto' : 'rewards.added'));
       } catch (e) {
-        console.error(e); toast('Не удалось сохранить');
-        showError('Награда не сохранилась', e);
+        console.error(e); toast(t('rewards.addFailed'));
+        showError(t('rewards.addFailedWhere'), e);
       }
       finally { $('btn-add').disabled = false; }
     };
@@ -269,14 +262,15 @@
       if (!user || !currentUid()) { location.href = 'index.html'; return; }
       const families = await listMyFamilies();
       fid = resolveActiveFamily(families) || getActiveFamilyId();
-      if (!fid) { showError('Семья не найдена', { code: 'no-family', message: 'Не удалось определить семью — зайдите на главную и войдите заново.' }); return; }
+      if (!fid) { showError(t('rewards.noFamily'), { code: 'no-family', message: t('rewards.noFamilyMsg') }); return; }
       // Родительская часть под кодом: если он задан, а в этой сессии его не
       // вводили — отправляем на главную, там спросят. Замок от ребёнка, не от взлома.
       const settings = await getSettings(fid).catch(() => null);
+      applyFamilyLang(settings); applyI18n();
       if (parentAreaLocked(settings) && !isParentUnlocked()) { location.href = 'index.html'; return; }
       // Витрина, которая не прочиталась, и витрина пустая — разные вещи:
       // молчаливое «пока пусто» отправляло чинить не то.
-      try { shop = await listRealRewards(fid); } catch (e) { console.warn('shop:', e); showError('Витрина не загрузилась', e); }
+      try { shop = await listRealRewards(fid); } catch (e) { console.warn('shop:', e); showError(t('rewards.shopFailed'), e); }
       renderShop();
       try { children = await listAllRewards(fid); } catch (e) { console.warn('children:', e); }
       renderQueue();

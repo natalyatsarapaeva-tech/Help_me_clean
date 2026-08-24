@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Эталоны — Наведи и убери</title>
+  <title data-i18n="title.reference">Reference shots — Point &amp; Tidy</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#3A5DA8">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -30,48 +30,44 @@
 </head>
 <body>
   <div class="wrap col">
-    <a class="back" href="index.html">← Назад</a>
-    <h1>Эталоны</h1>
+    <a class="back" href="index.html" data-i18n="common.back">← Back</a>
+    <h1 data-i18n="reference.title">Reference shots</h1>
 
     <!-- Список комнат: где эталон снят, где нет. -->
     <section id="step-list" class="step on col">
-      <p class="muted">
-        Эталон — фото поверхности, <strong>какой она должна быть убранной</strong>.
-        Проверка сравнивает детское «после» с ним, а не с идеалом из головы модели:
-        у каждой семьи свой порядок. Без эталона уборка работает — просто проверка мягче.
-      </p>
+      <p class="muted" data-i18n-html="reference.intro"></p>
       <div class="chip" id="coverage">—</div>
       <div id="rooms" class="col"></div>
     </section>
 
     <!-- Съёмка эталона для выбранной комнаты. -->
     <section id="step-shoot" class="step col">
-      <h1 id="shoot-title">Комната</h1>
-      <p class="muted">Убери поверхность так, как считаешь правильным, и сними её. С того же ракурса, с какого будет снимать ребёнок.</p>
+      <h1 id="shoot-title" data-i18n="reference.room">Room</h1>
+      <p class="muted" data-i18n="reference.shootHint">Tidy the surface and photograph it.</p>
       <div class="frame" id="frame">
         <video id="video" playsinline muted></video>
-        <div class="hint-over">Наведи на убранный стол или полку</div>
-        <button class="shutter" id="btn-shot" aria-label="Снять"></button>
+        <div class="hint-over" data-i18n="reference.overlay">Point at the tidy table or shelf</div>
+        <button class="shutter" id="btn-shot" data-i18n-aria-label="cards.shoot" aria-label="Take a photo"></button>
       </div>
       <div class="row" id="cam-fallback" style="display:none">
         <label class="btn btn-primary" style="max-width:340px">
-          📷 Сделать фото
+          <span data-i18n="reference.takePhoto">📷 Take a photo</span>
           <input id="file-input" type="file" accept="image/*" capture="environment" hidden>
         </label>
         <span class="muted" id="cam-error"></span>
       </div>
       <div class="row">
-        <button class="btn btn-ghost" id="btn-cancel">← К списку</button>
+        <button class="btn btn-ghost" id="btn-cancel" data-i18n="common.backToList">← Back to list</button>
       </div>
     </section>
 
     <!-- Просмотр снятого до загрузки: эталон — надолго, стоит посмотреть. -->
     <section id="step-preview" class="step col">
-      <h1>Так и должно быть убрано?</h1>
+      <h1 data-i18n="reference.previewTitle">Is this how it should be tidied?</h1>
       <div class="frame"><img id="preview" alt=""></div>
       <div class="row">
-        <button class="btn btn-primary" id="btn-save">Сохранить эталон</button>
-        <button class="btn btn-ghost" id="btn-retake">Переснять</button>
+        <button class="btn btn-primary" id="btn-save" data-i18n="reference.save">Save the reference shot</button>
+        <button class="btn btn-ghost" id="btn-retake" data-i18n="common.retake">Retake</button>
       </div>
     </section>
 
@@ -82,26 +78,29 @@
     import {
       initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
       getHome, listReferences, saveReference, deleteReference, getSettings, isParentUnlocked,
+      applyFamilyLang,
     } from './js/store.js';
     import { parentAreaLocked } from './js/profile-core.js';
     import { startCamera, stopCamera, cameraErrorText } from './js/camera.js';
     import { compressReference } from './js/image.js';
     import { roomsInOrder, reconcileRouteOrder, referenceCoverage } from './js/family-core.js';
+    import { t, applyI18n } from './js/i18n.js';
 
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const STEPS = ['step-list', 'step-shoot', 'step-preview'];
     const show = id => STEPS.forEach(s => $(s).classList.toggle('on', s === id));
     let toastTimer;
-    const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); };
+    const toast = (m) => { const el = $('toast'); el.textContent = m; el.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), 2600); };
+    applyI18n();
 
     let fid = null, rooms = [], refs = [], target = null, shot = null;
 
     function renderList() {
       const cov = referenceCoverage(rooms, refs);
       $('coverage').textContent = cov.total
-        ? `Снято ${cov.covered} из ${cov.total}${cov.complete ? ' — все комнаты' : ''}`
-        : 'Комнат пока нет';
+        ? t('reference.coverage', { covered: cov.covered, total: cov.total, all: cov.complete ? t('reference.coverageAll') : '' })
+        : t('reference.noRooms');
       $('rooms').innerHTML = cov.rooms.map(r => `
         <div class="card ref-row" data-room="${esc(r.id)}">
           ${r.reference
@@ -109,27 +108,27 @@
             : '<div class="thumb empty">📷</div>'}
           <div class="col" style="gap:2px">
             <strong>${esc(r.icon || '🏠')} ${esc(r.name)}</strong>
-            <span class="muted">${r.reference ? 'Эталон снят' : 'Эталона нет — проверка будет мягче'}</span>
+            <span class="muted">${esc(t(r.reference ? 'reference.taken' : 'reference.missing'))}</span>
           </div>
           <div class="ref-actions">
-            <button class="btn btn-primary shoot">${r.reference ? 'Переснять' : 'Снять эталон'}</button>
-            ${r.reference ? '<button class="btn btn-ghost drop">Удалить</button>' : ''}
+            <button class="btn btn-primary shoot">${esc(t(r.reference ? 'common.retake' : 'reference.shoot'))}</button>
+            ${r.reference ? `<button class="btn btn-ghost drop">${esc(t('common.delete'))}</button>` : ''}
           </div>
-        </div>`).join('') || '<div class="muted">Сначала создай карту дома на экране «Дом».</div>';
+        </div>`).join('') || `<div class="muted">${esc(t('reference.noHome'))}</div>`;
 
       $('rooms').querySelectorAll('[data-room]').forEach(el => {
         const room = rooms.find(r => r.id === el.dataset.room);
         el.querySelector('.shoot').onclick = () => goShoot(room);
         const drop = el.querySelector('.drop');
         if (drop) drop.onclick = async () => {
-          if (!confirm(`Удалить эталон для «${room.name}»?`)) return;
+          if (!confirm(t('reference.confirmDelete', { name: room.name }))) return;
           drop.disabled = true;
           try {
             await deleteReference(fid, room.id);
             refs = refs.filter(x => (x.id || x.surfaceId) !== room.id);
             renderList();
-            toast('Эталон удалён');
-          } catch (e) { console.error(e); toast('Не удалось удалить'); drop.disabled = false; }
+            toast(t('reference.deleted'));
+          } catch (e) { console.error(e); toast(t('cards.deleteFailed')); drop.disabled = false; }
         };
       });
     }
@@ -155,7 +154,7 @@
         stopCamera();
         $('preview').src = shot.url;
         show('step-preview');
-      } catch (e) { console.error(e); toast('Не получилось снять — попробуй ещё раз'); }
+      } catch (e) { console.error(e); toast(t('reference.captureFailed')); }
     }
 
     function dropShot() {
@@ -178,12 +177,10 @@
         dropShot();
         renderList();
         show('step-list');
-        toast('Эталон сохранён');
+        toast(t('reference.saved'));
       } catch (e) {
         console.error(e);
-        toast(e?.code === 'storage/unauthorized'
-          ? 'Storage отклонил загрузку — проверь правила'
-          : 'Не удалось сохранить эталон');
+        toast(t(e?.code === 'storage/unauthorized' ? 'reference.storageDenied' : 'reference.saveFailed'));
       } finally { $('btn-save').disabled = false; }
     };
 
@@ -196,6 +193,7 @@
       // Родительская часть под кодом: если он задан, а в этой сессии его не
       // вводили — отправляем на главную, там спросят. Замок от ребёнка, не от взлома.
       const settings = await getSettings(fid).catch(() => null);
+      applyFamilyLang(settings); applyI18n();
       if (parentAreaLocked(settings) && !isParentUnlocked()) { location.href = 'index.html'; return; }
 
       const home = await getHome(fid);

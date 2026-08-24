@@ -24,6 +24,7 @@ import {
 } from './family-core.js';
 import { makeProfileId, normalizeProfiles, pickActiveProfile } from './profile-core.js';
 import { hashPin } from './pin.js';
+import { t, getLang, normalizeLang, adoptFamilyLang } from './i18n.js';
 
 export { normalizeJoinCode };
 
@@ -90,7 +91,7 @@ async function ensureUserDoc() {
         createdAt: new Date().toISOString(),
       });
     }
-  } catch (e) { console.warn('ensureUserDoc (проверь firestore.rules):', e?.code || e); }
+  } catch (e) { console.warn('ensureUserDoc (check firestore.rules):', e?.code || e); }
 }
 
 // ── Мои семьи + активная ─────────────────────────────────────────────────────
@@ -134,19 +135,19 @@ export function lockParentArea() { sessionStorage.removeItem(PARENT_KEY); }
 // запретили правила (permission-denied на конкретном документе).
 async function at(step, path, promise) {
   try { return await promise; }
-  catch (e) { console.error(`[createFamily] шаг «${step}» (${path}) →`, e?.code || e?.message || e); e.step = step; e.path = path; throw e; }
+  catch (e) { console.error(`[createFamily] step "${step}" (${path}) →`, e?.code || e?.message || e); e.step = step; e.path = path; throw e; }
 }
 export async function createFamily(name) {
   const uid = currentUid();
   const fid = makeFamilyId(name);
   const now = new Date().toISOString();
-  await at('семья', `families/${fid}`, setDoc(doc(db, 'families', fid), {
-    name: name || 'Наш дом', ownerUid: uid, joinCode: makeJoinCode(), createdAt: now,
+  await at('family', `families/${fid}`, setDoc(doc(db, 'families', fid), {
+    name: name || t('parent.defaultFamily'), ownerUid: uid, joinCode: makeJoinCode(), createdAt: now,
   }));
-  await at('членство', `families/${fid}/members/${uid}`, setDoc(doc(db, 'families', fid, 'members', uid), { role: PARENT, addedBy: uid, joinedAt: now }));
-  await at('индекс', `users/${uid}/families/${fid}`, setDoc(doc(db, 'users', uid, 'families', fid), { role: PARENT, name: name || 'Наш дом', joinedAt: now }));
-  await at('настройки', `families/${fid}/settings/app`, setDoc(doc(db, 'families', fid, 'settings', 'app'), {
-    playlists: { minion: '', jedi: '' }, dailyBudget: null,
+  await at('membership', `families/${fid}/members/${uid}`, setDoc(doc(db, 'families', fid, 'members', uid), { role: PARENT, addedBy: uid, joinedAt: now }));
+  await at('index', `users/${uid}/families/${fid}`, setDoc(doc(db, 'users', uid, 'families', fid), { role: PARENT, name: name || t('parent.defaultFamily'), joinedAt: now }));
+  await at('settings', `families/${fid}/settings/app`, setDoc(doc(db, 'families', fid, 'settings', 'app'), {
+    playlists: { minion: '', jedi: '' }, dailyBudget: null, lang: getLang(),
   }));
   setActiveFamilyId(fid);
   return fid;
@@ -154,7 +155,7 @@ export async function createFamily(name) {
 export async function ensureFirstFamily() {
   const mine = await listMyFamilies();
   if (mine.length) return resolveActiveFamily(mine);
-  await createFamily('Наш дом');
+  await createFamily(t('parent.defaultFamily'));
   return getActiveFamilyId();
 }
 export async function getFamily(fid) {
@@ -403,6 +404,19 @@ export async function setParentPin(fid, pin) {
   await setDoc(doc(db, 'families', fid, 'settings', 'app'), { parentPin: lock }, { merge: true });
   return lock;
 }
+
+// Язык семьи хранится рядом с остальными настройками (families/{fid}/settings/app).
+// Устройство всё равно решает само (js/i18n.js): свой сохранённый выбор сильнее.
+// Смысл поля — чтобы ВТОРОЙ планшет, на котором язык ещё не выбирали, открылся
+// сразу на языке семьи, а не на английском по умолчанию.
+export async function setFamilyLang(fid, lang) {
+  const l = normalizeLang(lang);
+  if (!fid || !l) return null;
+  await setDoc(doc(db, 'families', fid, 'settings', 'app'), { lang: l }, { merge: true });
+  return l;
+}
+// Подхватить язык семьи, если на этом устройстве выбора ещё не делали.
+export function applyFamilyLang(settings) { return adoptFamilyLang(settings?.lang); }
 
 export async function saveSettings(fid, settings) {
   await setDoc(doc(db, 'families', fid, 'settings', 'app'), settings, { merge: true });

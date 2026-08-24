@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Дети — Наведи и убери</title>
+  <title data-i18n="title.children">Children — Point &amp; Tidy</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#3A5DA8">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -22,31 +22,26 @@
 </head>
 <body>
   <div class="wrap col">
-    <a class="back" href="index.html">← Назад</a>
-    <h1>Дети</h1>
-    <p class="muted">
-      Профиль — это просто имя и аватар на этом планшете: отдельный аккаунт ребёнку не нужен.
-      Код (4 цифры) нужен, только чтобы дети не заходили друг к другу. Малышу, который цифры
-      ещё не помнит, код можно не ставить.
-    </p>
+    <a class="back" href="index.html" data-i18n="common.back">← Back</a>
+    <h1 data-i18n="children.title">Children</h1>
+    <p class="muted" data-i18n="children.intro">A profile is just a name and an avatar on this tablet.</p>
 
     <div class="card col">
-      <strong>Профили</strong>
-      <div id="kids" class="col muted">Загрузка…</div>
+      <strong data-i18n="children.listTitle">Profiles</strong>
+      <div id="kids" class="col muted" data-i18n="common.loading">Loading…</div>
     </div>
 
     <section class="card col">
-      <strong>Добавить ребёнка</strong>
+      <strong data-i18n="children.addTitle">Add a child</strong>
       <div class="form-grid">
-        <input id="f-avatar" class="field emoji" value="🧒" maxlength="2" title="Аватар">
-        <input id="f-name" class="field" placeholder="Имя (напр. Майя)">
-        <input id="f-pin" class="field pin-field" inputmode="numeric" maxlength="4" placeholder="Код (можно без)">
+        <input id="f-avatar" class="field emoji" value="🧒" maxlength="2" data-i18n-title="children.avatarTitle" title="Avatar">
+        <input id="f-name" class="field" data-i18n-placeholder="children.namePlaceholder" placeholder="Name">
+        <input id="f-pin" class="field pin-field" inputmode="numeric" maxlength="4" data-i18n-placeholder="children.pinPlaceholder" placeholder="Code (optional)">
       </div>
-      <p class="muted" style="font-size:14px">
-        Кем быть — Миньоном или Джедаем — ребёнок выбирает сам при каждом входе. Искорки и прогресс общие,
-        у каждого образа своя коллекция карточек.
+      <p class="muted" style="font-size:14px" data-i18n="children.addNote">
+        Who to be the child picks at every sign-in.
       </p>
-      <button id="btn-create" class="btn btn-primary">Добавить</button>
+      <button id="btn-create" class="btn btn-primary" data-i18n="common.add">Add</button>
     </section>
 
     <div id="toast" class="toast"></div>
@@ -61,29 +56,31 @@
     import { theme } from './js/family-core.js';
     import { normalizeProfiles, isLocked, parentAreaLocked } from './js/profile-core.js';
     import { isValidPin } from './js/pin.js';
+    import { t, applyI18n } from './js/i18n.js';
 
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     let toastTimer;
-    const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); };
+    const toast = (m) => { const el = $('toast'); el.textContent = m; el.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), 2600); };
+    applyI18n();
 
     let fid = null, kids = [];
 
     function renderKids() {
-      if (!kids.length) { $('kids').innerHTML = 'Пока никого. Добавь первого ниже.'; return; }
+      if (!kids.length) { $('kids').textContent = t('children.empty'); return; }
       $('kids').innerHTML = kids.map(k => `
         <div class="kid" data-id="${esc(k.id)}">
           <span class="face">${esc(k.avatar || '🧒')}</span>
           <span>
-            <strong>${esc(k.name || 'Ребёнок')}</strong>
+            <strong>${esc(k.name || t('profiles.child'))}</strong>
             <span class="muted" style="font-size:14px">
-              — ${isLocked(k) ? '🔒 код задан' : 'без кода'}${k.lastTheme ? `, в прошлый раз: ${esc(theme(k.lastTheme).label)}` : ''}
+              — ${esc(isLocked(k) ? t('profiles.locked') : t('profiles.open'))}${k.lastTheme ? esc(t('children.lastTime', { theme: theme(k.lastTheme).label })) : ''}
             </span>
           </span>
           <span class="row">
-            <button class="btn btn-ghost pin">${isLocked(k) ? 'Сменить код' : 'Задать код'}</button>
-            ${isLocked(k) ? '<button class="btn btn-ghost unpin">Снять код</button>' : ''}
-            <button class="btn btn-ghost drop">Удалить</button>
+            <button class="btn btn-ghost pin">${esc(t(isLocked(k) ? 'children.changePin' : 'children.setPin'))}</button>
+            ${isLocked(k) ? `<button class="btn btn-ghost unpin">${esc(t('children.clearPin'))}</button>` : ''}
+            <button class="btn btn-ghost drop">${esc(t('common.delete'))}</button>
           </span>
         </div>`).join('');
 
@@ -91,25 +88,25 @@
         const id = el.dataset.id;
         const kid = kids.find(k => k.id === id);
         el.querySelector('.pin').onclick = async () => {
-          const pin = prompt(`Новый код для «${kid.name}» — 4 цифры:`);
+          const pin = prompt(t('children.promptPin', { name: kid.name }));
           if (pin === null) return;
-          if (!isValidPin(pin.trim())) { toast('Код — ровно 4 цифры'); return; }
+          if (!isValidPin(pin.trim())) { toast(t('children.pinExactly4')); return; }
           try {
             await setProfilePin(fid, id, pin.trim());
             await reload();
-            toast('Код сохранён');
-          } catch (e) { console.error(e); toast('Не удалось сохранить код'); }
+            toast(t('children.pinSaved'));
+          } catch (e) { console.error(e); toast(t('children.pinSaveFailed')); }
         };
         const unpin = el.querySelector('.unpin');
         if (unpin) unpin.onclick = async () => {
-          if (!confirm(`Снять код с профиля «${kid.name}»? В него сможет зайти любой на этом планшете.`)) return;
-          try { await setProfilePin(fid, id, null); await reload(); toast('Код снят'); }
-          catch (e) { console.error(e); toast('Не удалось снять код'); }
+          if (!confirm(t('children.confirmClearPin', { name: kid.name }))) return;
+          try { await setProfilePin(fid, id, null); await reload(); toast(t('children.pinCleared')); }
+          catch (e) { console.error(e); toast(t('children.pinClearFailed')); }
         };
         el.querySelector('.drop').onclick = async () => {
-          if (!confirm(`Удалить профиль «${kid.name}»? Искорки, коллекция и история уборок пропадут.`)) return;
-          try { await deleteProfile(fid, id); await reload(); toast('Профиль удалён'); }
-          catch (e) { console.error(e); toast('Не удалось удалить'); }
+          if (!confirm(t('children.confirmDelete', { name: kid.name }))) return;
+          try { await deleteProfile(fid, id); await reload(); toast(t('children.deleted')); }
+          catch (e) { console.error(e); toast(t('children.deleteFailed')); }
         };
       });
     }
@@ -123,15 +120,15 @@
       const name = $('f-name').value.trim();
       const avatar = $('f-avatar').value.trim() || '🧒';
       const pin = $('f-pin').value.trim();
-      if (!name) { toast('Введи имя'); return; }
-      if (pin && !isValidPin(pin)) { toast('Код — ровно 4 цифры (или оставь поле пустым)'); return; }
+      if (!name) { toast(t('children.needName')); return; }
+      if (pin && !isValidPin(pin)) { toast(t('children.pinExactly4OrEmpty')); return; }
       $('btn-create').disabled = true;
       try {
         await createChildProfile(fid, { name, avatar, pin: pin || null });
         $('f-name').value = ''; $('f-pin').value = ''; $('f-avatar').value = '🧒';
         await reload();
-        toast(`Профиль «${name}» добавлен`);
-      } catch (e) { console.error(e); toast('Не удалось добавить профиль'); }
+        toast(t('children.added', { name }));
+      } catch (e) { console.error(e); toast(t('children.addFailed')); }
       finally { $('btn-create').disabled = false; }
     };
 

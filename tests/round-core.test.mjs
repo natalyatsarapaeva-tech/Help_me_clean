@@ -11,6 +11,12 @@ import {
   dropItem, isItemDropped, isStepEmpty, roundContextTags,
 } from '../js/round-core.js';
 import { ACTION_IDS, SPARKLES, ZONE_IDS, emptyRewards, sanitizeScan } from '../js/family-core.js';
+import { setLang } from '../js/i18n.js';
+
+// Фикстуры ниже — русские ответы сканера, и подписи шагов ядро берёт из словаря
+// (js/i18n.js). Фиксируем язык, чтобы тест проверял сборку раунда, а не то, на
+// каком языке открылось приложение.
+setLang('ru');
 
 // Сырой ответ сканера: три категории вперемешку, порядок «как увидела модель».
 const RAW_SCAN = {

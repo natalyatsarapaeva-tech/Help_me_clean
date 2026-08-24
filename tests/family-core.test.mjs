@@ -6,8 +6,8 @@ import {
   makeJoinCode, normalizeJoinCode, isValidJoinCode,
   makeFamilyId, makeSessionId, pickActiveFamily,
   ROOM_TYPES, normalizeRoomType, ACTION_IDS, ACTION_CATEGORIES, actionCategory, isValidActionCategory,
-  normalizeActionCategory, cleanPlace, TIDY_STANDARD, TIDY_STANDARD_TEXT,
-  THEME_IDS, theme, isValidTheme, normalizeTheme, FALLBACK_THEME, rankForCleanups, JEDI_RANKS,
+  normalizeActionCategory, cleanPlace, tidyStandard, tidyStandardText,
+  THEME_IDS, theme, isValidTheme, normalizeTheme, FALLBACK_THEME, rankForCleanups, jediRanks,
   SPARKLES, sparklesFor, nextSurpriseIn, shouldSurprise,
   emptyRewards, normalizeRewards, cardsForTheme, addCard, addSparkles,
   cornersToXywh, parseJsonObject, parseJsonArray, stripJsonFences,
@@ -16,6 +16,13 @@ import {
   VERIFY_LIMITS, missedPhrase,
   referenceCoverage,
 } from '../js/family-core.js';
+import { setLang } from '../js/i18n.js';
+
+// Ядро отдаёт человеческие подписи на текущем языке (js/i18n.js). Фикстуры и
+// ожидания здесь русские, поэтому язык фиксируем явно — иначе тест проверял бы
+// не логику, а то, какой язык оказался умолчанием. Полноту словарей и работу
+// переключения проверяет tests/i18n.test.mjs.
+setLang('ru');
 
 test('роли', () => {
   assert.deepEqual(ROLES, ['parent', 'child']);
@@ -71,8 +78,8 @@ test('темы и ранги', () => {
   // У профиля НЕТ темы по умолчанию — «не выбрано» это null, а не 'minion'.
   assert.equal(normalizeTheme(undefined), null);
   assert.equal(normalizeTheme('jedi'), 'jedi');
-  assert.equal(rankForCleanups(0), JEDI_RANKS[0]);
-  assert.equal(rankForCleanups(100), JEDI_RANKS[3]);
+  assert.equal(rankForCleanups(0), jediRanks()[0]);
+  assert.equal(rankForCleanups(100), jediRanks()[3]);
 });
 
 test('награды и сюрпризы', () => {
@@ -317,15 +324,15 @@ test('имя места приводится к сравнимому виду �
 });
 
 test('норма порядка одна на всё приложение и покрывает поднятые требования', () => {
-  const all = TIDY_STANDARD.join(' ').toLowerCase();
+  const all = tidyStandard().join(' ').toLowerCase();
   assert.match(all, /пуст/, 'пустая поверхность — норма');
   assert.match(all, /лампа/, 'исключение для письменного стола');
   assert.match(all, /стул/, 'на стульях вещей нет');
   assert.match(all, /кровать заправлена|заправлена/, 'кровать заправлена');
   assert.match(all, /пол свободен|на полу не место/, 'пол свободен');
   assert.match(all, /урн/, 'полная урна — отдельная задача');
-  assert.ok(TIDY_STANDARD_TEXT.startsWith('- '), 'готова к подстановке в промпт');
-  assert.equal(TIDY_STANDARD_TEXT.split('\n').length, TIDY_STANDARD.length);
+  assert.ok(tidyStandardText().startsWith('- '), 'готова к подстановке в промпт');
+  assert.equal(tidyStandardText().split('\n').length, tidyStandard().length);
 });
 
 test('новые категории: пол, кровать, полная урна', () => {

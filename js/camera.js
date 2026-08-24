@@ -4,6 +4,8 @@
 // садится батарея), а забыть про stop() легко, когда код скопирован на два экрана.
 //
 // Поток в приложении всегда один: открывая новый, закрываем предыдущий.
+import { t } from './i18n.js';
+
 let stream = null;
 
 export function isCameraOn() { return !!stream; }
@@ -34,7 +36,7 @@ if (typeof window !== 'undefined') window.addEventListener('pagehide', stopCamer
 // экраны показывают кнопку «Сделать фото» (<input capture>).
 export function cameraErrorText(e) {
   const name = e?.name || '';
-  if (name === 'NotAllowedError') return 'Камера не разрешена — можно снять фото кнопкой.';
-  if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'Камера не найдена — сними фото кнопкой.';
-  return 'Камера недоступна — сними фото кнопкой.';
+  if (name === 'NotAllowedError') return t('camera.notAllowed');
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') return t('camera.notFound');
+  return t('camera.unavailable');
 }

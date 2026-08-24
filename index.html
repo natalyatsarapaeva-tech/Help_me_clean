@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Наведи и убери</title>
+  <title data-i18n="title.home">Point &amp; Tidy</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#3A5DA8">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -12,6 +12,10 @@
   <style>
     .avatar-btn .lock { font-size: 15px; color: var(--muted); font-weight: 800; }
     .pin-dots { letter-spacing: 12px; text-align: center; font-size: 32px; }
+    /* Переключатель языка — такие же чипы, как выбор образа: активный обведён. */
+    .lang-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .lang-row .btn { min-height: 52px; padding: 0 18px; }
+    .lang-row .btn.on { outline: 4px solid var(--accent); }
   </style>
 </head>
 <body>
@@ -19,46 +23,49 @@
 
     <!-- Видимая плашка с точным текстом ошибки (чтобы не лезть в консоль). -->
     <div id="err-box" class="hidden" style="background:#3a0d0d;color:#ffd7d7;border:1px solid #a33;border-radius:12px;padding:12px 14px;margin-bottom:14px;font-family:ui-monospace,monospace;font-size:13px;white-space:pre-wrap;word-break:break-word;">
-      <strong style="display:block;margin-bottom:6px;font-family:var(--font)">⚠️ Ошибка — скопируй мне этот текст:</strong>
+      <strong style="display:block;margin-bottom:6px;font-family:var(--font)" data-i18n="err.copyThis">⚠️ Error — copy this text and send it to me:</strong>
       <span id="err-text"></span>
     </div>
 
     <!-- Вход в приложение — ОДИН, родительский. Планшет становится семейным
          устройством; дети не логинятся, а выбирают себя на экране профилей. -->
     <section id="screen-login" class="hidden col" style="max-width:420px">
-      <h1>Наведи и убери</h1>
-      <p class="muted">Вход для родителя. Дети потом выбирают себя сами — им аккаунт не нужен.</p>
-      <input id="email" class="field" type="email" placeholder="Email" autocomplete="username">
-      <input id="password" class="field" type="password" placeholder="Пароль" autocomplete="current-password">
-      <button id="btn-email" class="btn btn-primary">Войти</button>
-      <button id="btn-toggle" class="btn btn-ghost">Нет аккаунта? Зарегистрироваться</button>
-      <div class="divider">или</div>
-      <button id="btn-google" class="btn btn-google">Войти через Google</button>
+      <h1 data-i18n="app.name">Point &amp; Tidy</h1>
+      <p class="muted" data-i18n="login.sub">Sign-in is for the parent.</p>
+      <input id="email" class="field" type="email" data-i18n-placeholder="login.email" placeholder="Email" autocomplete="username">
+      <input id="password" class="field" type="password" data-i18n-placeholder="login.password" placeholder="Password" autocomplete="current-password">
+      <button id="btn-email" class="btn btn-primary" data-i18n="login.signIn">Sign in</button>
+      <button id="btn-toggle" class="btn btn-ghost" data-i18n="login.toRegister">No account yet? Create one</button>
+      <div class="divider" data-i18n="login.or">or</div>
+      <button id="btn-google" class="btn btn-google" data-i18n="login.google">Sign in with Google</button>
+      <!-- Язык виден ещё до входа: родитель, который не читает по-русски, не
+           должен сперва угадывать, где здесь кнопка «Войти». -->
+      <div class="lang-row" id="lang-login" style="margin-top:8px"></div>
     </section>
 
     <!-- Кто сейчас у планшета. Главный экран семейного устройства. -->
     <section id="screen-profiles" class="hidden col">
-      <h1>Кто убирается?</h1>
+      <h1 data-i18n="profiles.title">Who is tidying up?</h1>
       <div class="avatars" id="profiles-list"></div>
-      <p class="muted hidden" id="no-profiles">Профилей пока нет — зайди в родительскую часть и добавь ребёнка.</p>
+      <p class="muted hidden" id="no-profiles" data-i18n="profiles.empty">No profiles yet.</p>
       <div class="row" style="margin-top:20px">
-        <button id="btn-parent-area" class="btn btn-ghost">👑 Родителям</button>
+        <button id="btn-parent-area" class="btn btn-ghost" data-i18n="profiles.parentArea">👑 Parents</button>
       </div>
     </section>
 
     <!-- Ввод PIN: и для профиля ребёнка, и для родительской части. -->
     <section id="screen-pin" class="hidden col" style="max-width:380px">
-      <h1 id="pin-title">Твой код</h1>
-      <p class="muted" id="pin-sub">Четыре цифры</p>
+      <h1 id="pin-title" data-i18n="pin.yourCode">Your code</h1>
+      <p class="muted" id="pin-sub" data-i18n="pin.fourDigits">Four digits</p>
       <input id="pin-input" class="field pin-dots" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="off">
-      <button id="pin-go" class="btn btn-primary">Войти</button>
-      <button id="pin-cancel" class="btn btn-ghost">← Назад</button>
+      <button id="pin-go" class="btn btn-primary" data-i18n="pin.go">Enter</button>
+      <button id="pin-cancel" class="btn btn-ghost" data-i18n="common.back">← Back</button>
     </section>
 
     <!-- «Кто ты сегодня?» — образ выбирает сам ребёнок (§24). -->
     <section id="screen-who" class="hidden col">
-      <h1>Кто ты сегодня?</h1>
-      <p class="muted">Можно выбирать по-разному каждый день. Всё, что ты накопил, останется с тобой.</p>
+      <h1 data-i18n="who.title">Who are you today?</h1>
+      <p class="muted" data-i18n="who.sub">You can pick differently every day.</p>
       <div class="avatars" id="who-choices"></div>
     </section>
 
@@ -67,23 +74,23 @@
       <div class="row" style="justify-content:space-between">
         <h1 id="child-title">—</h1>
         <div class="row">
-          <button id="btn-change-who" class="btn btn-ghost">Сменить, кто я</button>
-          <button id="btn-switch-profile" class="btn btn-ghost">Это не я</button>
+          <button id="btn-change-who" class="btn btn-ghost" data-i18n="child.changeWho">Change who I am</button>
+          <button id="btn-switch-profile" class="btn btn-ghost" data-i18n="child.notMe">That's not me</button>
         </div>
       </div>
 
       <a id="btn-clean" class="btn btn-primary" href="scan.html"
          style="min-height:96px;font-size:26px;display:flex;align-items:center;justify-content:center;text-decoration:none">
-        🧹 Убирать!
+        <span data-i18n="child.clean">🧹 Tidy up!</span>
       </a>
 
       <div class="row">
-        <a class="btn btn-ghost" href="collection.html">🃏 Моя коллекция</a>
-        <a class="btn btn-ghost" href="shop.html">🎁 Магазин</a>
+        <a class="btn btn-ghost" href="collection.html" data-i18n="child.collection">🃏 My collection</a>
+        <a class="btn btn-ghost" href="shop.html" data-i18n="child.shop">🎁 Shop</a>
       </div>
 
       <div class="card col">
-        <div id="child-stats" class="muted">Загрузка…</div>
+        <div id="child-stats" class="muted" data-i18n="common.loading">Loading…</div>
       </div>
     </section>
 
@@ -92,39 +99,48 @@
       <div class="row" style="justify-content:space-between">
         <h1 id="family-name">—</h1>
         <div class="row">
-          <button id="btn-to-profiles" class="btn btn-ghost">← К профилям</button>
-          <button id="btn-signout" class="btn btn-ghost">Выйти из аккаунта</button>
+          <button id="btn-to-profiles" class="btn btn-ghost" data-i18n="parent.toProfiles">← To profiles</button>
+          <button id="btn-signout" class="btn btn-ghost" data-i18n="parent.signOut">Sign out</button>
         </div>
       </div>
       <div class="row">
-        <span class="chip">👑 Родитель</span>
-        <span class="chip">Код семьи: <span class="code" id="join-code">——————</span></span>
-        <button id="btn-copy-code" class="btn btn-ghost">Скопировать</button>
+        <span class="chip" data-i18n="parent.role">👑 Parent</span>
+        <span class="chip"><span data-i18n="parent.familyCode">Family code:</span> <span class="code" id="join-code">——————</span></span>
+        <button id="btn-copy-code" class="btn btn-ghost" data-i18n="common.copy">Copy</button>
       </div>
 
       <div class="row">
-        <a class="btn btn-ghost" href="home.html">🏠 Дом</a>
-        <a class="btn btn-ghost" href="children.html">🧒 Дети</a>
-        <a class="btn btn-ghost" href="reference.html">📸 Эталоны</a>
-        <a class="btn btn-ghost" href="cards.html">🃏 Карточки</a>
-        <a class="btn btn-ghost" href="rewards.html">🎁 Награды</a>
+        <a class="btn btn-ghost" href="home.html" data-i18n="parent.nav.home">🏠 Home</a>
+        <a class="btn btn-ghost" href="children.html" data-i18n="parent.nav.children">🧒 Children</a>
+        <a class="btn btn-ghost" href="reference.html" data-i18n="parent.nav.reference">📸 Reference shots</a>
+        <a class="btn btn-ghost" href="cards.html" data-i18n="parent.nav.cards">🃏 Cards</a>
+        <a class="btn btn-ghost" href="rewards.html" data-i18n="parent.nav.rewards">🎁 Rewards</a>
+      </div>
+
+      <!-- Переключатель языка. Живёт во ВЗРОСЛОЙ части, за родительским кодом:
+           язык — настройка, а не игра, и ребёнок не должен переключить приложение
+           на язык, которого не знает, просто ткнув в красивую кнопку. -->
+      <div class="card col" id="parent-lang-box">
+        <strong data-i18n="parent.lang.title">Language</strong>
+        <div class="muted" data-i18n="parent.lang.hint">Applies to the whole app on this tablet.</div>
+        <div class="lang-row" id="lang-parent"></div>
       </div>
 
       <div class="card col" id="parent-pin-box">
-        <strong id="parent-pin-title">Родительский код</strong>
+        <strong id="parent-pin-title" data-i18n="parent.pin.title">Parent code</strong>
         <div class="muted" id="parent-pin-hint">—</div>
         <div class="row">
           <input id="parent-pin-input" class="field pin-dots" style="max-width:200px" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="off">
-          <button id="btn-set-parent-pin" class="btn btn-primary">Сохранить код</button>
-          <button id="btn-clear-parent-pin" class="btn btn-ghost hidden">Снять код</button>
+          <button id="btn-set-parent-pin" class="btn btn-primary" data-i18n="parent.pin.set">Set code</button>
+          <button id="btn-clear-parent-pin" class="btn btn-ghost hidden" data-i18n="parent.pin.clear">Remove code</button>
         </div>
       </div>
 
       <div class="card col">
-        <strong>Профили детей</strong>
-        <div id="profiles" class="muted">Загрузка…</div>
-        <div class="muted" style="font-size:14px">
-          Дальше по ТЗ: join второго взрослого по коду через Worker.
+        <strong data-i18n="parent.profilesTitle">Children profiles</strong>
+        <div id="profiles" class="muted" data-i18n="common.loading">Loading…</div>
+        <div class="muted" style="font-size:14px" data-i18n="parent.joinNote">
+          Next per the spec: joining a second grown-up by code through the Worker.
         </div>
       </div>
     </section>
@@ -139,11 +155,12 @@
       resolveActiveFamily, getActiveFamilyId, listProfiles,
       getActiveProfileId, setActiveProfileId, clearActiveProfileId, resolveActiveProfile,
       isParentUnlocked, unlockParentArea, lockParentArea, setParentPin,
-      getSettings, rememberChildTheme, getRewards,
+      getSettings, rememberChildTheme, getRewards, setFamilyLang, applyFamilyLang,
     } from './js/store.js';
-    import { theme, THEMES, THEME_IDS, cardsForTheme, rankForCleanups } from './js/family-core.js';
+    import { theme, THEME_IDS, cardsForTheme, rankForCleanups } from './js/family-core.js';
     import { normalizeProfiles, findProfile, isLocked, parentLock, parentAreaLocked } from './js/profile-core.js';
     import { verifyPin, isValidPin } from './js/pin.js';
+    import { t, getLang, setLang, applyI18n, renderLangSwitch } from './js/i18n.js';
 
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -159,35 +176,40 @@
     function showError(e) {
       const parts = [];
       if (e?.code) parts.push('code: ' + e.code);
-      if (e?.step) parts.push('шаг: ' + e.step + ' (' + (e.path || '') + ')');
+      if (e?.step) parts.push(t('err.step') + e.step + ' (' + (e.path || '') + ')');
       parts.push('message: ' + (e?.message || String(e)));
-      parts.push('РЕАЛЬНЫЙ project: ' + projectId);
-      parts.push('uid (вошёл?): ' + (currentUid() || 'НЕТ — не авторизован'));
+      parts.push(t('err.realProject') + projectId);
+      parts.push(t('err.uid') + (currentUid() || t('err.uidNone')));
       $('err-text').textContent = parts.join('\n');
       $('err-box').classList.remove('hidden');
       console.error(e);
     }
     function friendlyError(e) {
       const c = e?.code || '';
-      if (c.includes('wrong-password') || c.includes('invalid-credential')) return 'Неверный email или пароль';
-      if (c.includes('email-already-in-use')) return 'Такой email уже зарегистрирован';
-      if (c.includes('operation-not-allowed')) return 'Провайдер входа не включён в Firebase Auth';
+      if (c.includes('wrong-password') || c.includes('invalid-credential')) return t('err.badCredentials');
+      if (c.includes('email-already-in-use')) return t('err.emailInUse');
+      if (c.includes('operation-not-allowed')) return t('err.providerOff');
       if (c === 'permission-denied' || /insufficient permissions/i.test(e?.message || '')) {
-        return `Firestore отклонил запись${e?.step ? ` («${e.step}» → ${e.path})` : ''}. Проверь, что правила опубликованы в проекте help-me-clean-7969f.`;
+        return t('err.permissionDenied', { where: e?.step ? ` (“${e.step}” → ${e.path})` : '' });
       }
-      return e?.message || 'Что-то пошло не так';
+      return e?.message || t('common.somethingWrong');
     }
 
     // ── Вход родителя ──
     let mode = 'signin';
     $('btn-toggle').onclick = () => {
       mode = mode === 'signin' ? 'register' : 'signin';
-      $('btn-email').textContent = mode === 'signin' ? 'Войти' : 'Зарегистрироваться';
-      $('btn-toggle').textContent = mode === 'signin' ? 'Нет аккаунта? Зарегистрироваться' : 'Уже есть аккаунт? Войти';
+      renderAuthMode();
     };
+    // Подписи режима «вход/регистрация» — отдельной функцией: их же надо
+    // перерисовать при смене языка, а не только по клику.
+    function renderAuthMode() {
+      $('btn-email').textContent = t(mode === 'signin' ? 'login.signIn' : 'login.register');
+      $('btn-toggle').textContent = t(mode === 'signin' ? 'login.toRegister' : 'login.toSignIn');
+    }
     $('btn-email').onclick = async () => {
       const email = $('email').value.trim(), pass = $('password').value;
-      if (!email || !pass) { toast('Введи email и пароль'); return; }
+      if (!email || !pass) { toast(t('login.needBoth')); return; }
       try {
         if (mode === 'signin') await signInEmail(email, pass); else await registerEmail(email, pass);
         await afterLogin();
@@ -204,7 +226,7 @@
     function askPin({ title, sub, lock, onOk }) {
       pinTarget = { lock, onOk };
       $('pin-title').textContent = title;
-      $('pin-sub').textContent = sub || 'Четыре цифры';
+      $('pin-sub').textContent = sub || t('pin.fourDigits');
       $('pin-input').value = '';
       show('screen-pin');
       setTimeout(() => $('pin-input').focus(), 50);
@@ -212,11 +234,11 @@
     async function submitPin() {
       if (!pinTarget) return;
       const pin = $('pin-input').value.trim();
-      if (!isValidPin(pin)) { toast('Код — 4 цифры'); return; }
+      if (!isValidPin(pin)) { toast(t('pin.mustBe4')); return; }
       $('pin-go').disabled = true;
       try {
         const ok = await verifyPin(pin, pinTarget.lock);
-        if (!ok) { toast('Не тот код, попробуй ещё раз'); $('pin-input').value = ''; $('pin-input').focus(); return; }
+        if (!ok) { toast(t('pin.wrong')); $('pin-input').value = ''; $('pin-input').focus(); return; }
         const done = pinTarget.onOk; pinTarget = null;
         await done();
       } finally { $('pin-go').disabled = false; }
@@ -230,8 +252,8 @@
       $('profiles-list').innerHTML = profiles.map(p => `
         <button class="avatar-btn" data-profile="${esc(p.id)}">
           ${esc(p.avatar || '🧒')}
-          <span class="name">${esc(p.name || 'Ребёнок')}</span>
-          <span class="lock">${isLocked(p) ? '🔒 код' : 'без кода'}</span>
+          <span class="name">${esc(p.name || t('profiles.child'))}</span>
+          <span class="lock">${esc(isLocked(p) ? t('profiles.locked') : t('profiles.open'))}</span>
         </button>`).join('');
       $('no-profiles').classList.toggle('hidden', !!profiles.length);
       $('profiles-list').querySelectorAll('[data-profile]').forEach(el => {
@@ -250,7 +272,10 @@
         renderWhoChoices();
         show('screen-who');
       };
-      if (isLocked(p)) askPin({ title: `${p.avatar || '🧒'} ${p.name || 'Твой'} код`, sub: 'Введи свои четыре цифры', lock: p.pin, onOk: go });
+      if (isLocked(p)) askPin({
+        title: t('pin.childTitle', { avatar: p.avatar || '🧒', name: p.name || '' }).trim(),
+        sub: t('pin.childSub'), lock: p.pin, onOk: go,
+      });
       else go();
     }
     $('btn-switch-profile').onclick = () => { clearActiveProfileId(); activeProfile = null; renderProfiles(); show('screen-profiles'); };
@@ -259,16 +284,16 @@
     $('btn-parent-area').onclick = () => {
       const lock = parentLock(settings);
       if (!lock || isParentUnlocked()) { openParent(); return; }
-      askPin({ title: '👑 Родительский код', sub: 'Четыре цифры, которые знают взрослые', lock, onOk: async () => { unlockParentArea(); await openParent(); } });
+      askPin({ title: t('pin.parentTitle'), sub: t('pin.parentSub'), lock, onOk: async () => { unlockParentArea(); await openParent(); } });
     };
     $('btn-to-profiles').onclick = () => { renderProfiles(); show('screen-profiles'); };
     $('btn-copy-code').onclick = async () => {
-      try { await navigator.clipboard.writeText($('join-code').textContent.trim()); toast('Код скопирован'); }
-      catch { toast('Не удалось скопировать'); }
+      try { await navigator.clipboard.writeText($('join-code').textContent.trim()); toast(t('parent.codeCopied')); }
+      catch { toast(t('parent.codeCopyFailed')); }
     };
     $('btn-set-parent-pin').onclick = async () => {
       const pin = $('parent-pin-input').value.trim();
-      if (!isValidPin(pin)) { toast('Код — 4 цифры'); return; }
+      if (!isValidPin(pin)) { toast(t('pin.mustBe4')); return; }
       $('btn-set-parent-pin').disabled = true;
       try {
         await setParentPin(fid, pin);
@@ -276,27 +301,25 @@
         unlockParentArea();
         $('parent-pin-input').value = '';
         renderParentPin();
-        toast('Код сохранён');
-      } catch (e) { showError(e); toast('Не удалось сохранить код'); }
+        toast(t('parent.pin.saved'));
+      } catch (e) { showError(e); toast(t('parent.pin.saveFailed')); }
       finally { $('btn-set-parent-pin').disabled = false; }
     };
     $('btn-clear-parent-pin').onclick = async () => {
-      if (!confirm('Снять родительский код? Взрослая часть станет открытой для всех.')) return;
+      if (!confirm(t('parent.pin.confirmClear'))) return;
       try {
         await setParentPin(fid, null);
         settings = await getSettings(fid);
         renderParentPin();
-        toast('Код снят');
-      } catch (e) { showError(e); toast('Не удалось снять код'); }
+        toast(t('parent.pin.cleared'));
+      } catch (e) { showError(e); toast(t('parent.pin.clearFailed')); }
     };
     function renderParentPin() {
       const locked = parentAreaLocked(settings);
-      $('parent-pin-title').textContent = locked ? 'Родительский код' : 'Родительский код не задан';
-      $('parent-pin-hint').textContent = locked
-        ? 'Взрослая часть под кодом. Здесь можно его сменить.'
-        : 'Пока кода нет, ребёнок может зайти сюда и, например, поменять цены в магазине. Задай код — это четыре цифры.';
+      $('parent-pin-title').textContent = t(locked ? 'parent.pin.title' : 'parent.pin.titleUnset');
+      $('parent-pin-hint').textContent = t(locked ? 'parent.pin.hintLocked' : 'parent.pin.hintOpen');
       $('btn-clear-parent-pin').classList.toggle('hidden', !locked);
-      $('btn-set-parent-pin').textContent = locked ? 'Сменить код' : 'Задать код';
+      $('btn-set-parent-pin').textContent = t(locked ? 'parent.pin.change' : 'parent.pin.set');
     }
 
     // ── Тема сегодняшнего дня ──
@@ -305,10 +328,12 @@
       sessionStorage.setItem(THEME_KEY, themeId);
     }
     function renderWhoChoices() {
-      $('who-choices').innerHTML = THEME_IDS.map(t => `
-        <button class="avatar-btn" data-theme-pick="${t}">
-          ${THEMES[t].currencyEmoji}<span class="name">${THEMES[t].label}</span>
-        </button>`).join('');
+      $('who-choices').innerHTML = THEME_IDS.map(id => {
+        const th = theme(id);
+        return `<button class="avatar-btn" data-theme-pick="${id}">
+          ${th.currencyEmoji}<span class="name">${esc(th.label)}</span>
+        </button>`;
+      }).join('');
       $('who-choices').querySelectorAll('[data-theme-pick]').forEach(btn => {
         btn.onclick = async () => {
           const t = btn.dataset.themePick;
@@ -324,26 +349,29 @@
     async function openChild(themeId) {
       const th = theme(themeId || sessionStorage.getItem(THEME_KEY));
       applyTheme(th.id);
-      $('child-title').textContent = `${activeProfile.avatar || '🧒'} ${activeProfile.name || 'Привет'}`;
+      $('child-title').textContent = `${activeProfile.avatar || '🧒'} ${activeProfile.name || t('child.greeting')}`;
       show('screen-child');
       try {
         const rewards = await getRewards(fid, activeProfile.id);
         const cards = cardsForTheme(rewards, th.id);
-        $('child-stats').textContent =
-          `${th.currencyEmoji} Можно потратить: ${rewards.currency}   ·   Заработано всего: ${rewards.earnedTotal}   ·   ` +
-          `Карточки ${th.label}: ${cards.length}   ·   Уборок: ${rewards.cleanupsTotal} (${rankForCleanups(rewards.cleanupsTotal)})`;
-      } catch (e) { console.warn(e); $('child-stats').textContent = 'Не удалось загрузить — проверь связь.'; }
+        $('child-stats').textContent = t('child.stats', {
+          emoji: th.currencyEmoji, currency: rewards.currency, earned: rewards.earnedTotal,
+          theme: th.label, cards: cards.length,
+          cleanups: rewards.cleanupsTotal, rank: rankForCleanups(rewards.cleanupsTotal),
+        });
+      } catch (e) { console.warn(e); $('child-stats').textContent = t('child.statsFailed'); }
     }
 
     // ── Родительская панель ──
     async function openParent() {
       const fam = await getFamily(fid);
-      $('family-name').textContent = fam?.name || 'Наш дом';
+      $('family-name').textContent = fam?.name || t('parent.defaultFamily');
       $('join-code').textContent = fam?.joinCode || '——————';
       renderParentPin();
       $('profiles').textContent = profiles.length
         ? profiles.map(p => `${p.avatar || '🧒'} ${p.name || p.id}${isLocked(p) ? ' 🔒' : ''}`).join('   ')
-        : 'Пока нет — добавь на экране «Дети».';
+        : t('parent.profilesEmpty');
+      renderLangSwitch($('lang-parent'), switchLang);
       show('screen-parent');
     }
 
@@ -353,6 +381,9 @@
       if (!families.length) { await ensureFirstFamily(); families = await listMyFamilies(); }
       fid = resolveActiveFamily(families) || getActiveFamilyId();
       settings = await getSettings(fid).catch(() => null);
+      // Второй планшет, на котором язык ещё не выбирали, открывается на языке семьи.
+      applyFamilyLang(settings);
+      applyI18n();
       profiles = normalizeProfiles(await listProfiles(fid).catch(() => []));
 
       // Планшет помнит, кто на нём убирается: PIN спрашиваем при СМЕНЕ профиля,
@@ -373,8 +404,40 @@
       show('screen-profiles');
     }
 
+    // ── Язык ──────────────────────────────────────────────────────────────
+    // Экран рисует себя целиком из данных, поэтому переключать язык можно на
+    // месте, без перезагрузки: applyI18n правит статику, дальше перерисовываем
+    // всё, что построено в JS. Выбор уезжает и в настройки семьи — чтобы второй
+    // планшет, на котором язык ещё не трогали, открылся сразу на нём.
+    function rerenderAll() {
+      applyI18n();
+      renderAuthMode();
+      renderLangSwitch($('lang-login'), switchLang);
+      renderLangSwitch($('lang-parent'), switchLang);
+      if (profiles.length) renderProfiles();
+      if (!$('screen-who').classList.contains('hidden')) renderWhoChoices();
+      if (!$('screen-parent').classList.contains('hidden')) { renderParentPin(); openParent().catch(() => {}); }
+      if (activeProfile && !$('screen-child').classList.contains('hidden')) {
+        openChild(sessionStorage.getItem(THEME_KEY)).catch(() => {});
+      }
+    }
+    async function switchLang(lang) {
+      if (lang === getLang()) return;
+      setLang(lang);
+      rerenderAll();
+      toast(t('parent.lang.saved'));
+      // Мягко: не удалось записать в семью — язык на планшете всё равно сменился.
+      if (fid && isParentUnlocked()) {
+        try { await setFamilyLang(fid, lang); }
+        catch (e) { console.warn('setFamilyLang:', e); toast(t('parent.lang.familyFailed')); }
+      }
+    }
+
     // ── Старт ──
     (async () => {
+      applyI18n();
+      renderAuthMode();
+      renderLangSwitch($('lang-login'), switchLang);
       try {
         const user = await initAuth();
         if (user && currentUid()) { await afterLogin(); return; }
