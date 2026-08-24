@@ -6,8 +6,9 @@ import {
   makeJoinCode, normalizeJoinCode, isValidJoinCode,
   makeFamilyId, makeSessionId, pickActiveFamily,
   ROOM_TYPES, normalizeRoomType, ACTION_IDS, ACTION_CATEGORIES, actionCategory, isValidActionCategory,
-  normalizeActionCategory, cleanPlace, TIDY_STANDARD, TIDY_STANDARD_TEXT,
-  THEME_IDS, theme, isValidTheme, normalizeTheme, FALLBACK_THEME, rankForCleanups, JEDI_RANKS,
+  normalizeActionCategory, cleanPlace, tidyStandard, tidyStandardText,
+  themeIds, theme, isValidTheme, normalizeTheme, fallbackThemeId, rankForCleanups, rankNames,
+  setFamilyThemes, familyThemes, photoCheckRequired, canFinishUnverified,
   SPARKLES, sparklesFor, nextSurpriseIn, shouldSurprise,
   emptyRewards, normalizeRewards, cardsForTheme, addCard, addSparkles,
   cornersToXywh, parseJsonObject, parseJsonArray, stripJsonFences,
@@ -17,6 +18,13 @@ import {
   MAX_SURFACES, normalizeSurfaceName, normalizeSurfaces, surfaceSuggestions,
   referenceCoverage,
 } from '../js/family-core.js';
+import { setLang } from '../js/i18n.js';
+
+// Ядро отдаёт человеческие подписи на текущем языке (js/i18n.js). Фикстуры и
+// ожидания здесь русские, поэтому язык фиксируем явно — иначе тест проверял бы
+// не логику, а то, какой язык оказался умолчанием. Полноту словарей и работу
+// переключения проверяет tests/i18n.test.mjs.
+setLang('ru');
 
 test('роли', () => {
   assert.deepEqual(ROLES, ['parent', 'child']);
@@ -64,16 +72,43 @@ test('типы комнат и цветовой словарь — закрыт�
   assert.equal(actionCategory('trash').target, 'Ведро');
 });
 
-test('темы и ранги', () => {
-  assert.deepEqual(THEME_IDS, ['minion', 'jedi']);
-  assert.equal(theme('minion').currencyName, 'бананы');
-  assert.equal(theme('unknown').id, FALLBACK_THEME); // фолбэк только для отрисовки
-  assert.ok(isValidTheme('jedi') && !isValidTheme('sith'));
-  // У профиля НЕТ темы по умолчанию — «не выбрано» это null, а не 'minion'.
+test('темы: пока настройки не загружены — пресеты семьи', () => {
+  setFamilyThemes(null);
+  assert.deepEqual(themeIds(), ['sunny', 'starry']);
+  assert.equal(theme('unknown').id, fallbackThemeId()); // фолбэк только для отрисовки
+  assert.ok(isValidTheme('starry') && !isValidTheme('sith'));
+  // У профиля НЕТ темы по умолчанию — «не выбрано» это null, а не первая тема.
   assert.equal(normalizeTheme(undefined), null);
-  assert.equal(normalizeTheme('jedi'), 'jedi');
-  assert.equal(rankForCleanups(0), JEDI_RANKS[0]);
-  assert.equal(rankForCleanups(100), JEDI_RANKS[3]);
+  assert.equal(normalizeTheme('starry'), 'starry');
+  // Франшизные id старых документов понимаются и после переезда на свои темы:
+  // добытое ребёнком не должно пропасть из-за переименования.
+  assert.equal(normalizeTheme('minion'), 'sunny');
+  assert.equal(theme('jedi').id, 'starry');
+});
+
+test('темы семьи вытесняют пресеты, ранги берутся у темы', () => {
+  setFamilyThemes([{ id: 'dino', name: 'Динозавры', emoji: '🦕',
+    colors: { primary: 'grass', secondary: 'earth', accent: 'sun' },
+    ranks: ['Яйцо', 'Ящерка', '', 'Тираннозавр'] }]);
+  assert.deepEqual(themeIds(), ['dino']);
+  assert.equal(theme('dino').label, 'Динозавры');
+  assert.equal(theme('dino').currencyEmoji, '🦕');
+  assert.equal(rankForCleanups(0, 'dino'), 'Яйцо');
+  assert.equal(rankForCleanups(30, 'dino'), rankNames('dino')[2], 'пропуск в середине — название по умолчанию');
+  assert.equal(rankForCleanups(100, 'dino'), 'Тираннозавр');
+  assert.ok(rankNames('dino')[2].length > 2, 'пустой ранг подписан словарём, а не пустотой');
+  // Тема, которой у семьи нет, рисуется первой — экран не остаётся без образа.
+  assert.equal(theme('starry').id, 'dino');
+  assert.equal(familyThemes()[0].name, 'Динозавры');
+  setFamilyThemes(null);
+});
+
+test('проверка по фото: обязательна, пока родитель не сказал иначе', () => {
+  assert.equal(photoCheckRequired(null), true);
+  assert.equal(photoCheckRequired({}), true);
+  assert.equal(photoCheckRequired({ photoCheckRequired: false }), false);
+  assert.equal(canFinishUnverified({ photoCheckRequired: false }), true);
+  assert.equal(canFinishUnverified({}), false, 'выход из проверки — только с разрешения семьи');
 });
 
 test('награды и сюрпризы', () => {
@@ -203,7 +238,7 @@ test('фраза «осталось только…» — конкретная, 
 test('награды: валюта общая на ребёнка, коллекции — по темам', () => {
   const fresh = emptyRewards();
   assert.equal(fresh.currency, 0);
-  assert.deepEqual(Object.keys(fresh.cardsByTheme), THEME_IDS);
+  assert.deepEqual(Object.keys(fresh.cardsByTheme), themeIds());
 
   // Валюта не зависит от темы: копится у ребёнка, смена темы её не трогает.
   let r = addSparkles(fresh, 'step');
@@ -214,25 +249,36 @@ test('награды: валюта общая на ребёнка, коллек�
   assert.equal(r.cleanupsTotal, 1);
 
   // Карточки живут в коллекции своей темы и не смешиваются.
-  r = addCard(r, 'minion', 'banana-01');
-  r = addCard(r, 'jedi', 'droid-01');
-  r = addCard(r, 'minion', 'banana-01'); // дубль игнорируется
-  assert.deepEqual(cardsForTheme(r, 'minion'), ['banana-01']);
-  assert.deepEqual(cardsForTheme(r, 'jedi'), ['droid-01']);
+  r = addCard(r, 'sunny', 'sticker-01');
+  r = addCard(r, 'starry', 'droid-01');
+  r = addCard(r, 'sunny', 'sticker-01'); // дубль игнорируется
+  assert.deepEqual(cardsForTheme(r, 'sunny'), ['sticker-01']);
+  assert.deepEqual(cardsForTheme(r, 'starry'), ['droid-01']);
 
   // Вход не мутируется.
   assert.equal(fresh.currency, 0);
-  assert.deepEqual(fresh.cardsByTheme.minion, []);
+  assert.deepEqual(fresh.cardsByTheme.sunny, []);
 });
 
 test('нормализация наград: миграция старого плоского cards[]', () => {
   const migrated = normalizeRewards({ currency: 7, cards: ['old-1', 'old-2'], cleanupsTotal: 3 });
   assert.equal(migrated.currency, 7);
   assert.equal(migrated.cleanupsTotal, 3);
-  assert.deepEqual(migrated.cardsByTheme[FALLBACK_THEME], ['old-1', 'old-2']);
-  assert.deepEqual(migrated.cardsByTheme.jedi, []);
+  assert.deepEqual(migrated.cardsByTheme[fallbackThemeId()], ['old-1', 'old-2']);
+  assert.deepEqual(migrated.cardsByTheme.starry, []);
   // Мусор на входе не роняет.
   assert.deepEqual(normalizeRewards(null), emptyRewards());
+});
+
+test('нормализация наград: добытое в старых и удалённых темах не пропадает', () => {
+  // Коллекции франшизных образов переезжают в свои темы...
+  const moved = normalizeRewards({ cardsByTheme: { minion: ['a'], jedi: ['b'] } });
+  assert.deepEqual(moved.cardsByTheme.sunny, ['a']);
+  assert.deepEqual(moved.cardsByTheme.starry, ['b']);
+  // ...а коллекция темы, которую родитель удалил, остаётся в документе: витрина
+  // её не покажет, но отнимать добытое нельзя (§336).
+  const orphan = normalizeRewards({ cardsByTheme: { dino: ['rex'] } });
+  assert.deepEqual(orphan.cardsByTheme.dino, ['rex']);
 });
 
 test('карта дома: порядок обхода, домашняя комната первой, reorder', () => {
@@ -318,15 +364,15 @@ test('имя места приводится к сравнимому виду �
 });
 
 test('норма порядка одна на всё приложение и покрывает поднятые требования', () => {
-  const all = TIDY_STANDARD.join(' ').toLowerCase();
+  const all = tidyStandard().join(' ').toLowerCase();
   assert.match(all, /пуст/, 'пустая поверхность — норма');
   assert.match(all, /лампа/, 'исключение для письменного стола');
   assert.match(all, /стул/, 'на стульях вещей нет');
   assert.match(all, /кровать заправлена|заправлена/, 'кровать заправлена');
   assert.match(all, /пол свободен|на полу не место/, 'пол свободен');
   assert.match(all, /урн/, 'полная урна — отдельная задача');
-  assert.ok(TIDY_STANDARD_TEXT.startsWith('- '), 'готова к подстановке в промпт');
-  assert.equal(TIDY_STANDARD_TEXT.split('\n').length, TIDY_STANDARD.length);
+  assert.ok(tidyStandardText().startsWith('- '), 'готова к подстановке в промпт');
+  assert.equal(tidyStandardText().split('\n').length, tidyStandard().length);
 });
 
 test('новые категории: пол, кровать, полная урна', () => {

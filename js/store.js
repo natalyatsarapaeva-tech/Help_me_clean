@@ -9,6 +9,7 @@
 //   families/{fid}/profiles/{pid}/progress/{sessionId}
 //   families/{fid}/profiles/{pid}/rewards/current
 //   families/{fid}/reference/{surfaceId}, /cards/{cardId}, /home/*, /settings/*
+//   families/{fid}/settings/app    — язык, темы семьи, PIN родителя, проверка по фото
 import {
   db, doc, getDoc, setDoc, collection, getDocs, query, where,
   auth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
@@ -20,10 +21,12 @@ import {
 export { projectId };
 import {
   makeFamilyId, makeJoinCode, normalizeJoinCode, pickActiveFamily,
-  PARENT, normalizeTheme, normalizeRewards, emptyRewards,
+  PARENT, normalizeTheme, normalizeRewards, emptyRewards, setFamilyThemes,
 } from './family-core.js';
+import { normalizeThemes, defaultThemes } from './themes-core.js';
 import { makeProfileId, normalizeProfiles, pickActiveProfile } from './profile-core.js';
 import { hashPin } from './pin.js';
+import { t, getLang, normalizeLang, adoptFamilyLang } from './i18n.js';
 
 export { normalizeJoinCode };
 
@@ -90,7 +93,7 @@ async function ensureUserDoc() {
         createdAt: new Date().toISOString(),
       });
     }
-  } catch (e) { console.warn('ensureUserDoc (проверь firestore.rules):', e?.code || e); }
+  } catch (e) { console.warn('ensureUserDoc (check firestore.rules):', e?.code || e); }
 }
 
 // ── Мои семьи + активная ─────────────────────────────────────────────────────
@@ -134,19 +137,22 @@ export function lockParentArea() { sessionStorage.removeItem(PARENT_KEY); }
 // запретили правила (permission-denied на конкретном документе).
 async function at(step, path, promise) {
   try { return await promise; }
-  catch (e) { console.error(`[createFamily] шаг «${step}» (${path}) →`, e?.code || e?.message || e); e.step = step; e.path = path; throw e; }
+  catch (e) { console.error(`[createFamily] step "${step}" (${path}) →`, e?.code || e?.message || e); e.step = step; e.path = path; throw e; }
 }
 export async function createFamily(name) {
   const uid = currentUid();
   const fid = makeFamilyId(name);
   const now = new Date().toISOString();
-  await at('семья', `families/${fid}`, setDoc(doc(db, 'families', fid), {
-    name: name || 'Наш дом', ownerUid: uid, joinCode: makeJoinCode(), createdAt: now,
+  await at('family', `families/${fid}`, setDoc(doc(db, 'families', fid), {
+    name: name || t('parent.defaultFamily'), ownerUid: uid, joinCode: makeJoinCode(), createdAt: now,
   }));
-  await at('членство', `families/${fid}/members/${uid}`, setDoc(doc(db, 'families', fid, 'members', uid), { role: PARENT, addedBy: uid, joinedAt: now }));
-  await at('индекс', `users/${uid}/families/${fid}`, setDoc(doc(db, 'users', uid, 'families', fid), { role: PARENT, name: name || 'Наш дом', joinedAt: now }));
-  await at('настройки', `families/${fid}/settings/app`, setDoc(doc(db, 'families', fid, 'settings', 'app'), {
-    playlists: { minion: '', jedi: '' }, dailyBudget: null,
+  await at('membership', `families/${fid}/members/${uid}`, setDoc(doc(db, 'families', fid, 'members', uid), { role: PARENT, addedBy: uid, joinedAt: now }));
+  await at('index', `users/${uid}/families/${fid}`, setDoc(doc(db, 'users', uid, 'families', fid), { role: PARENT, name: name || t('parent.defaultFamily'), joinedAt: now }));
+  await at('settings', `families/${fid}/settings/app`, setDoc(doc(db, 'families', fid, 'settings', 'app'), {
+    // Темы-пресеты кладём сразу: родителю есть что переименовать под интересы
+    // ребёнка, а ребёнку есть из чего выбрать образ до первой настройки.
+    themes: defaultThemes(), photoCheckRequired: true,
+    playlists: {}, dailyBudget: null, lang: getLang(),
   }));
   setActiveFamilyId(fid);
   return fid;
@@ -154,7 +160,7 @@ export async function createFamily(name) {
 export async function ensureFirstFamily() {
   const mine = await listMyFamilies();
   if (mine.length) return resolveActiveFamily(mine);
-  await createFamily('Наш дом');
+  await createFamily(t('parent.defaultFamily'));
   return getActiveFamilyId();
 }
 export async function getFamily(fid) {
@@ -402,6 +408,47 @@ export async function setParentPin(fid, pin) {
   const lock = pin ? await hashPin(pin) : null;
   await setDoc(doc(db, 'families', fid, 'settings', 'app'), { parentPin: lock }, { merge: true });
   return lock;
+}
+
+// Язык семьи хранится рядом с остальными настройками (families/{fid}/settings/app).
+// Устройство всё равно решает само (js/i18n.js): свой сохранённый выбор сильнее.
+// Смысл поля — чтобы ВТОРОЙ планшет, на котором язык ещё не выбирали, открылся
+// сразу на языке семьи, а не на английском по умолчанию.
+export async function setFamilyLang(fid, lang) {
+  const l = normalizeLang(lang);
+  if (!fid || !l) return null;
+  await setDoc(doc(db, 'families', fid, 'settings', 'app'), { lang: l }, { merge: true });
+  return l;
+}
+// Подхватить язык семьи, если на этом устройстве выбора ещё не делали.
+export function applyFamilyLang(settings) { return adoptFamilyLang(settings?.lang); }
+
+// ── Темы семьи (§43) ────────────────────────────────────────────────────────
+// Темы придумывает родитель (themes.html) и лежат они рядом с остальными
+// настройками. Экран, которому нужны образы, зовёт applyFamilyThemes(settings)
+// сразу после getSettings — дальше family-core отвечает на theme(id) темами
+// ЭТОЙ семьи, а не пресетами.
+export function applyFamilyThemes(settings) { return setFamilyThemes(settings?.themes); }
+export async function loadFamilyThemes(fid) {
+  const settings = await getSettings(fid).catch(() => null);
+  applyFamilyThemes(settings);
+  return settings;
+}
+// Пишем ВЕСЬ список разом: тем максимум четыре, порядок в нём значим (это
+// порядок кнопок на экране «Кто ты сегодня?»), а поэлементная запись в массив
+// Firestore этого порядка не гарантирует.
+export async function saveFamilyThemes(fid, themes) {
+  const list = normalizeThemes(themes);
+  await setDoc(doc(db, 'families', fid, 'settings', 'app'), { themes: list }, { merge: true });
+  setFamilyThemes(list);
+  return list;
+}
+
+// Обязательность проверки по фото — настройка семьи, переключается в разделе
+// эталонов (reference.html), читается раундом (scan.html).
+export async function setPhotoCheckRequired(fid, required) {
+  await setDoc(doc(db, 'families', fid, 'settings', 'app'), { photoCheckRequired: !!required }, { merge: true });
+  return !!required;
 }
 
 export async function saveSettings(fid, settings) {

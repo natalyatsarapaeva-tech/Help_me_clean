@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Уборка — Наведи и убери</title>
+  <title data-i18n="title.scan">Tidying — Point &amp; Tidy</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#3A5DA8">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -107,33 +107,33 @@
   <div class="wrap scan col">
 
     <div class="topbar">
-      <a class="back" href="index.html" id="btn-exit">← Выйти</a>
-      <span class="chip" id="room-chip">Комната</span>
+      <a class="back" href="index.html" id="btn-exit" data-i18n="scan.exit">← Leave</a>
+      <span class="chip" id="room-chip" data-i18n="scan.room">Room</span>
       <span class="grow"></span>
       <span class="chip hidden" id="estimate">≈</span>
       <span class="chip" id="timer">0:00</span>
       <span class="chip spark" id="sparkles">✨ 0</span>
-      <a class="btn btn-ghost btn-mini hidden" id="btn-music" target="_blank" rel="noopener">🎵 Музыка</a>
+      <a class="btn btn-ghost btn-mini hidden" id="btn-music" target="_blank" rel="noopener" data-i18n="scan.music">🎵 Music</a>
     </div>
     <div class="bar"><i id="bar" style="width:0%"></i></div>
 
     <!-- Шаг 0. Куда идём убирать (порядок — из маршрута, заданного родителем). -->
     <section id="step-room" class="step on col">
-      <h1>С чего начнём?</h1>
-      <p class="muted" id="room-hint">Выбери комнату — начинать лучше со своей.</p>
+      <h1 data-i18n="scan.roomTitle">Where do we start?</h1>
+      <p class="muted" id="room-hint" data-i18n="scan.roomHint">Pick a room.</p>
       <div class="rooms" id="rooms"></div>
     </section>
 
     <!-- Шаг 0.5. Что именно убираем: стол крупным планом (A) или всю комнату (B).
          Это разные задачи и разные промпты, и ребёнок выбирает сам. -->
     <section id="step-mode" class="step col">
-      <h1 id="mode-title">Что убираем?</h1>
+      <h1 id="mode-title" data-i18n="scan.modeTitle">What are we tidying?</h1>
       <p class="muted hidden" id="mode-limit"></p>
       <div class="rooms">
-        <button class="avatar-btn room-btn" data-mode="closeup">🪑<span class="name">Стол или полка</span></button>
-        <button class="avatar-btn room-btn" data-mode="overview">🚪<span class="name">Вся комната</span></button>
+        <button class="avatar-btn room-btn" data-mode="closeup">🪑<span class="name" data-i18n="scan.modeCloseup">A table or a shelf</span></button>
+        <button class="avatar-btn room-btn" data-mode="overview">🚪<span class="name" data-i18n="scan.modeOverview">The whole room</span></button>
       </div>
-      <button class="btn btn-ghost" id="btn-back-rooms" style="max-width:240px">← Другая комната</button>
+      <button class="btn btn-ghost" id="btn-back-rooms" style="max-width:240px" data-i18n="scan.otherRoom">← Another room</button>
     </section>
 
     <!-- Шаг 1. Живая камера: «наведи на стол». -->
@@ -141,27 +141,27 @@
       <div class="stage">
         <div class="frame">
           <video id="video" playsinline muted></video>
-          <div class="hint-over" id="cam-hint">Наведи камеру на стол или полку — и жми большую кнопку</div>
-          <button class="shutter" id="btn-shot" aria-label="Снять"></button>
+          <div class="hint-over" id="cam-hint" data-i18n="scan.camHintCloseup">Point the camera at a table or a shelf.</div>
+          <button class="shutter" id="btn-shot" data-i18n-aria-label="cards.shoot" aria-label="Take a photo"></button>
         </div>
       </div>
       <div class="row" id="cam-fallback" style="display:none">
         <label class="btn btn-primary btn-big" style="max-width:340px">
-          📷 Сделать фото
+          <span data-i18n="scan.takePhoto">📷 Take a photo</span>
           <input id="file-input" type="file" accept="image/*" capture="environment" hidden>
         </label>
         <span class="muted" id="cam-error"></span>
       </div>
       <!-- Видно только при съёмке очага крупным планом: подходить необязательно. -->
-      <button class="btn btn-ghost hidden" id="btn-cam-back" style="max-width:280px">← Уберу и так</button>
+      <button class="btn btn-ghost hidden" id="btn-cam-back" style="max-width:280px" data-i18n="scan.tidyAnyway">← I'll tidy it as it is</button>
     </section>
 
     <!-- Шаг 2. Смотрим кадр. -->
     <section id="step-thinking" class="step">
       <div class="thinking">
         <div class="dots">👀</div>
-        <div class="task-text" id="thinking-text">Смотрю, что тут у тебя…</div>
-        <div class="muted">Это займёт пару секунд</div>
+        <div class="task-text" id="thinking-text" data-i18n="scan.thinking">Let me see what you have here…</div>
+        <div class="muted" data-i18n="scan.thinkingSub">This takes a couple of seconds</div>
       </div>
     </section>
 
@@ -169,7 +169,7 @@
          Ребёнок должен увидеть фронт работ и награду ДО первого шага, а очаги —
          пронумерованными прямо на своей комнате. -->
     <section id="step-brief" class="step col">
-      <h1 id="brief-title">Ого! Тут есть работа</h1>
+      <h1 id="brief-title" data-i18n="scan.briefTitleBig">Wow! There is work to do here</h1>
       <div class="stage">
         <div class="frame">
           <img id="brief-shot" alt="">
@@ -177,10 +177,10 @@
         </div>
         <div class="panel card col">
           <div class="reward-line" id="brief-reward">—</div>
-          <div class="muted" id="brief-lead">Думаю, тебе предстоит:</div>
+          <div class="muted" id="brief-lead" data-i18n="scan.briefLead">Here is what I think you have ahead:</div>
           <ol class="plan" id="brief-plan"></ol>
-          <button class="btn btn-primary btn-big" id="btn-brief-go">Начнём по шагам!</button>
-          <button class="btn btn-ghost" id="btn-brief-retake">Снять комнату заново</button>
+          <button class="btn btn-primary btn-big" id="btn-brief-go" data-i18n="scan.briefGo">Let's go step by step!</button>
+          <button class="btn btn-ghost" id="btn-brief-retake" data-i18n="scan.briefRetake">Shoot the room again</button>
           <div class="card hidden" id="brief-limit" style="border:3px dashed var(--line);font-size:15px"></div>
         </div>
       </div>
@@ -198,19 +198,19 @@
             <span class="task-color" id="task-emoji">🟣</span>
             <div class="col" style="gap:2px">
               <div class="counter"><span id="task-done">0</span><small>/<span id="task-total">0</span></small></div>
-              <div class="muted" id="task-of">Шаг 1 из 1</div>
+              <div class="muted" id="task-of">—</div>
             </div>
           </div>
           <div class="task-text hidden" id="task-title">—</div>
           <div class="task-text" id="task-instruction">—</div>
           <div class="muted" id="task-target">—</div>
-          <button class="btn btn-primary btn-big" id="btn-done">Готово ✓</button>
+          <button class="btn btn-primary btn-big" id="btn-done" data-i18n="scan.done">Done ✓</button>
           <!-- Очаг, который видно, но не разглядеть: подходим и снимаем крупным
                планом — дальше работает режим A. Отказаться можно. -->
-          <button class="btn btn-ghost hidden" id="btn-closeup-skip">Уберу и так ✓</button>
-          <div class="muted" id="task-hint" style="font-size:14px">Можно отмечать вещи пальцем — или сразу «Готово».</div>
-          <button class="btn btn-ghost" id="btn-skip">Тут такого нет</button>
-          <div class="card surprise hidden" id="surprise">🎁 <span id="surprise-text">Сюрприз!</span></div>
+          <button class="btn btn-ghost hidden" id="btn-closeup-skip" data-i18n="scan.tidyAnywayDone">I'll tidy it as it is ✓</button>
+          <div class="muted" id="task-hint" style="font-size:14px" data-i18n="scan.hintDefault">You can tap the things with your finger.</div>
+          <button class="btn btn-ghost" id="btn-skip" data-i18n="scan.skipItem">There is nothing like that here</button>
+          <div class="card surprise hidden" id="surprise">🎁 <span id="surprise-text" data-i18n="scan.surprise">Surprise!</span></div>
           <!-- Место сегодня уже отработано: убирать не мешаем, но говорим об
                этом ДО работы, а не после неё. -->
           <div class="card hidden" id="place-limit" style="border:3px dashed var(--line);font-size:15px"></div>
@@ -220,17 +220,17 @@
 
     <!-- Шаг 4. Фото «после» → проверка. -->
     <section id="step-after" class="step col">
-      <h1 id="after-title">Покажи, что получилось!</h1>
-      <p class="muted" id="after-sub">Сфотографируй то же место с того же ракурса.</p>
+      <h1 id="after-title" data-i18n="scan.afterTitle">Show me how it turned out!</h1>
+      <p class="muted" id="after-sub" data-i18n="scan.afterSub">Photograph the same spot from the same angle.</p>
       <div class="stage">
         <div class="frame">
           <video id="video2" playsinline muted></video>
-          <button class="shutter" id="btn-shot2" aria-label="Снять"></button>
+          <button class="shutter" id="btn-shot2" data-i18n-aria-label="cards.shoot" aria-label="Take a photo"></button>
         </div>
       </div>
       <div class="row" id="cam-fallback2" style="display:none">
         <label class="btn btn-primary btn-big" style="max-width:340px">
-          📷 Сделать фото
+          <span data-i18n="scan.takePhoto">📷 Take a photo</span>
           <input id="file-input2" type="file" accept="image/*" capture="environment" hidden>
         </label>
       </div>
@@ -241,7 +241,7 @@
          и раунд молча заканчивался. Теперь оставшееся обведено прямо на его
          кадре: «убери лишнее» ничего не значит, пока не видно, что лишнее. -->
     <section id="step-recheck" class="step col">
-      <h1 id="recheck-title">Да ты почти у цели!</h1>
+      <h1 id="recheck-title" data-i18n="scan.recheckTitle">You are almost there!</h1>
       <div class="stage">
         <div class="frame">
           <img id="recheck-shot" alt="">
@@ -250,35 +250,39 @@
         <div class="panel card col">
           <div class="task-text" id="recheck-text">—</div>
           <div class="muted" id="recheck-count"></div>
-          <button class="btn btn-primary btn-big" id="btn-recheck-go">Убрал! Снять ещё раз</button>
-          <div class="muted" style="font-size:14px">Искорки за шаги уже твои — они никуда не денутся.</div>
+          <button class="btn btn-primary btn-big" id="btn-recheck-go" data-i18n="scan.recheckGo">Done! Shoot it again</button>
+          <!-- Выход из проверки — только если семья разрешила её не проходить
+               (переключатель в разделе эталонов). При обязательной проверке
+               кнопки нет: иначе она и есть самый простой способ «убраться». -->
+          <button class="btn btn-ghost hidden" id="btn-recheck-finish" data-i18n="scan.recheckFinishAnyway">Done anyway ✓</button>
+          <div class="muted" style="font-size:14px" data-i18n="scan.recheckKeep">The sparkles for the steps are already yours.</div>
         </div>
       </div>
     </section>
 
     <!-- Шаг 5. Итог. -->
     <section id="step-done" class="step col">
-      <div class="praise" id="done-praise">Готово!</div>
+      <div class="praise" id="done-praise" data-i18n="scan.donePraise">Done!</div>
       <div class="card col">
         <div class="row" style="gap:24px">
-          <div><div class="counter" id="done-sparkles">0</div><div class="muted" id="done-currency">за эту уборку</div></div>
-          <div><div class="counter" id="done-time">0:00</div><div class="muted">на уборку</div></div>
-          <div><div class="counter" id="done-items">0</div><div class="muted">убрано вещей</div></div>
+          <div><div class="counter" id="done-sparkles">0</div><div class="muted" id="done-currency" data-i18n="scan.doneForThis">for this tidy-up</div></div>
+          <div><div class="counter" id="done-time">0:00</div><div class="muted" data-i18n="scan.doneTime">spent tidying</div></div>
+          <div><div class="counter" id="done-items">0</div><div class="muted" data-i18n="scan.doneItems">things put away</div></div>
         </div>
         <div id="done-note" class="muted hidden"></div>
         <div id="done-extra" class="muted"></div>
         <div id="limit-note" class="muted hidden"></div>
       </div>
 
-      <!-- Награда-карточка: каталог загружает родитель (cards.html), выпадает
+      <!-- Награда-карточка: каталог загружает родитель (themes.html), выпадает
            только за уборку, подтверждённую проверкой. -->
       <div class="card col hidden" id="card-win">
-        <strong id="card-win-title">Новая карточка!</strong>
+        <strong id="card-win-title" data-i18n="scan.cardWin">A new card!</strong>
         <div class="row">
           <img id="card-img" alt="" style="width:150px;aspect-ratio:3/4;object-fit:cover;border-radius:14px;background:var(--line)">
           <div class="col">
             <div class="task-text" id="card-name">—</div>
-            <a class="btn btn-ghost" href="collection.html">Вся коллекция →</a>
+            <a class="btn btn-ghost" href="collection.html" data-i18n="scan.wholeCollection">The whole collection →</a>
           </div>
         </div>
       </div>
@@ -293,35 +297,35 @@
           </div>
         </div>
         <div class="row">
-          <button class="btn btn-primary" id="btn-bonus-go">Сделаю! <span id="bonus-price"></span></button>
-          <button class="btn btn-ghost" id="btn-bonus-skip">Не сейчас</button>
+          <button class="btn btn-primary" id="btn-bonus-go"><span data-i18n="scan.bonusGo">I'll do it!</span> <span id="bonus-price"></span></button>
+          <button class="btn btn-ghost" id="btn-bonus-skip" data-i18n="scan.bonusSkip">Not now</button>
         </div>
       </div>
 
       <div class="row">
-        <button class="btn btn-primary btn-big" id="btn-again" style="max-width:340px">Ещё одно место</button>
-        <a class="btn btn-ghost" href="index.html">Домой</a>
+        <button class="btn btn-primary btn-big" id="btn-again" style="max-width:340px" data-i18n="scan.again">One more spot</button>
+        <a class="btn btn-ghost" href="index.html" data-i18n="scan.goHome">Home</a>
       </div>
     </section>
 
     <!-- Съёмка бонуса: тут человек в кадре — не ошибка, а смысл снимка. -->
     <section id="step-bonus" class="step col">
-      <h1 id="bonus-shot-title">Покажи, как ты это делаешь</h1>
+      <h1 id="bonus-shot-title" data-i18n="scan.bonusShotTitle">Show me how you do it</h1>
       <p class="muted" id="bonus-shot-hint">—</p>
       <div class="stage">
         <div class="frame">
           <video id="video3" playsinline muted></video>
-          <div class="hint-over">Себя и свои руки снимать МОЖНО — так и надо</div>
-          <button class="shutter" id="btn-shot3" aria-label="Снять"></button>
+          <div class="hint-over" data-i18n="scan.bonusOverlay">Photographing yourself and your hands IS allowed.</div>
+          <button class="shutter" id="btn-shot3" data-i18n-aria-label="cards.shoot" aria-label="Take a photo"></button>
         </div>
       </div>
       <div class="row" id="cam-fallback3" style="display:none">
         <label class="btn btn-primary btn-big" style="max-width:340px">
-          📷 Сделать фото
+          <span data-i18n="scan.takePhoto">📷 Take a photo</span>
           <input id="file-input3" type="file" accept="image/*" capture="environment" hidden>
         </label>
       </div>
-      <button class="btn btn-ghost" id="btn-bonus-cancel" style="max-width:240px">← Не сейчас</button>
+      <button class="btn btn-ghost" id="btn-bonus-cancel" style="max-width:240px" data-i18n="scan.bonusCancel">← Not now</button>
     </section>
 
     <div id="toast" class="toast"></div>
@@ -331,7 +335,7 @@
     import {
       initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
       getHome, getProfile, getSettings, getReference, getRewards, saveRewards, saveProgress,
-      listCards, getActiveProfileId,
+      listCards, getActiveProfileId, applyFamilyLang, applyFamilyThemes,
     } from './js/store.js';
     import {
       awardRound, isPlaceExhausted, isRoomExhausted, placeCount, roomCount,
@@ -341,9 +345,10 @@
     import { startCamera, stopCamera, cameraErrorText } from './js/camera.js';
     import { prepareScanFrame, revokeFrame } from './js/image.js';
     import {
-      theme, roomsInOrder, reconcileRouteOrder, FALLBACK_THEME, addCard, cardsForTheme,
-      missedPhrase, VERIFY_LIMITS,
+      theme, roomsInOrder, reconcileRouteOrder, addCard, cardsForTheme,
+      missedPhrase, VERIFY_LIMITS, canFinishUnverified,
     } from './js/family-core.js';
+    import { applyThemeVars } from './js/theme-apply.js';
     import { pickCard } from './js/cards-core.js';
     import { pickBonus, awardBonus, bonusesLeftToday } from './js/bonus-core.js';
     import {
@@ -353,6 +358,7 @@
       isStepEmpty, startCloseup, finishCloseup, cancelCloseup, totalSparkles, currentZone,
       roundContextTags,
     } from './js/round-core.js';
+    import { t, applyI18n, langTag } from './js/i18n.js';
 
     // Форма ответа проверки для случаев, когда мы отвечаем за модель (упала сеть).
     const EMPTY_VERIFY_UI = {
@@ -365,7 +371,8 @@
     const STEPS = ['step-room', 'step-mode', 'step-camera', 'step-thinking', 'step-brief', 'step-round', 'step-after', 'step-recheck', 'step-done', 'step-bonus'];
     const show = id => STEPS.forEach(s => $(s).classList.toggle('on', s === id));
     let toastTimer;
-    const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2600); };
+    const toast = (m) => { const el = $('toast'); el.textContent = m; el.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), 2600); };
+    applyI18n();
 
     // ── Состояние экрана ──
     let fid = null, profileId = null;
@@ -373,7 +380,11 @@
     // и его надо показать ДО уборки, а не «сюрпризом» в конце.
     let myRewards = null;
     let bonus = null; // предложенное бонусное задание
-    let th = theme(sessionStorage.getItem('tidy.todayTheme') || FALLBACK_THEME);
+    // Настройки семьи: из них тема (палитра и подписи образа) и то, обязательна
+    // ли проверка по фото. До их загрузки рисуем пресетом, чтобы экран не ждал сети.
+    let settings = null;
+    let th = theme(sessionStorage.getItem('tidy.todayTheme'));
+    let recheckResult = null;  // что вернула непройденная проверка — для «всё равно готово»
     let rooms = [], room = null;
     // Режим A (стол крупным планом) или B (обход комнаты) — выбирает ребёнок.
     let mode = 'closeup';
@@ -386,16 +397,22 @@
     let limitNote = '';       // «это место сегодня уже убирали» — считается сразу после скана
     let timerId = null;
 
-    document.documentElement.setAttribute('data-theme', th.id);
+    applyThemeVars(th);
+    // Тема семьи приезжает вместе с настройками: до этого на экране пресет.
+    function adoptTheme() {
+      th = theme(sessionStorage.getItem('tidy.todayTheme'));
+      applyThemeVars(th);
+      renderHeader();
+    }
 
     // Одна фраза под режим: на столе «Собери бумаги. Их четыре», в обходе
     // «Синий грузовик — в ящик с игрушками».
-    function sayTask(t) {
-      if (!t) return;
-      if (t.closeup) { say(`${t.title}. Подойди поближе и сфотографируй.`); return; }
-      say(t.mode === 'overview'
-        ? [t.title, t.instruction].filter(Boolean).join(' — ')
-        : `${t.instruction}. Их ${t.total}.`);
+    function sayTask(task) {
+      if (!task) return;
+      if (task.closeup) { say(t('scan.sayCloseup', { title: task.title })); return; }
+      say(task.mode === 'overview'
+        ? [task.title, task.instruction].filter(Boolean).join(' — ')
+        : t('scan.sayItems', { instruction: task.instruction, n: task.total }));
     }
 
     // ── Озвучка (§374). Громкая — у миньона, у джедая тишина. ──
@@ -404,7 +421,7 @@
       try {
         speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
-        u.lang = 'ru-RU'; u.rate = 1.05; u.pitch = 1.2;
+        u.lang = langTag(); u.rate = 1.05; u.pitch = 1.2;
         speechSynthesis.speak(u);
       } catch (_) {}
     }
@@ -449,11 +466,11 @@
     function renderHeader() {
       $('sparkles').textContent = `${th.currencyEmoji} ${round ? totalSparkles(round) : 0}`;
       const est = round?.estimatedMinutes;
-      $('estimate').textContent = est ? `≈ ${est} мин` : '';
+      $('estimate').textContent = est ? t('scan.estimate', { n: est }) : '';
       $('estimate').classList.toggle('hidden', !est);
       const p = roundProgress(round || {});
       $('bar').style.width = `${p.percent}%`;
-      $('room-chip').textContent = room ? `${room.icon || '🏠'} ${room.name}` : 'Уборка';
+      $('room-chip').textContent = room ? `${room.icon || '🏠'} ${room.name}` : t('scan.tidying');
     }
 
     // ── Раунд: подсветка одного цвета (A) или очаг комнаты (B) + панель ──
@@ -466,8 +483,10 @@
       $('task-done').textContent = overview ? task.number : task.done;
       $('task-total').textContent = overview ? task.of : task.total;
       $('task-of').textContent = overview
-        ? `Очаг ${task.number} из ${task.of}`
-        : (task.inCloseup ? `${task.zoneLabel}: шаг ${task.number} из ${task.of}` : `Шаг ${task.number} из ${task.of}`);
+        ? t('scan.zoneOf', { n: task.number, of: task.of })
+        : (task.inCloseup
+          ? t('scan.stepInZone', { zone: task.zoneLabel, n: task.number, of: task.of })
+          : t('scan.stepOf', { n: task.number, of: task.of }));
       $('task-title').textContent = task.title;
       $('task-title').classList.toggle('hidden', !task.title);
       $('task-instruction').textContent = task.instruction;
@@ -475,16 +494,12 @@
 
       // Очаг, который видно, но не разглядеть: главная кнопка — сфотографировать.
       const askCloseup = !!task.closeup;
-      $('btn-done').textContent = askCloseup ? '📷 Подойти и сфоткать'
-        : (overview ? 'Убрал ✓' : 'Готово ✓');
+      $('btn-done').textContent = t(askCloseup ? 'scan.goCloseup' : (overview ? 'scan.tidied' : 'scan.done'));
       $('btn-closeup-skip').classList.toggle('hidden', !askCloseup);
-      $('btn-skip').textContent = overview ? 'Тут чисто, пропустить' : 'Тут такого нет';
+      $('btn-skip').textContent = t(overview ? 'scan.skipCloseup' : 'scan.skipItem');
       $('btn-skip').classList.toggle('hidden', askCloseup);
-      $('task-hint').textContent = askCloseup
-        ? 'Тут мелочи, издалека не разобрать. Подойди — и я подскажу по шагам.'
-        : (overview
-          ? 'Убрал — жми по кружку или по кнопке. Крестик — если тут ничего нет.'
-          : 'Отмечай вещи пальцем — или сразу «Готово». Крестик у вещи — если её тут нет.');
+      $('task-hint').textContent = t(askCloseup ? 'scan.hintCloseup'
+        : (overview ? 'scan.hintOverview' : 'scan.hintItems'));
 
       $('boxes').innerHTML = task.inCloseup || !overview ? colorBoxes(task) : zonePins(task);
       wireMarkers(overview && !task.inCloseup);
@@ -514,7 +529,7 @@
     function dropOne(itemId) {
       round = dropItem(round, itemId);
       if (!isStepEmpty(round)) { renderRound(); return; }
-      toast('Ладно, тут и правда ничего нет');
+      toast(t('scan.okNothingHere'));
       round = skipStep(round);
       afterStep(null);
     }
@@ -526,7 +541,7 @@
         return `<button class="box ${isItemDone(round, it.id) ? 'done' : ''}" data-item="${it.id}"
           style="--c:${task.color};left:${x * 100}%;top:${y * 100}%;width:${w * 100}%;height:${h * 100}%">
           ${it.label ? `<span class="tag">${esc(it.label)}</span>` : ''}
-          <span class="nope" data-nope="${it.id}" role="button" title="тут этого нет">✕</span></button>`;
+          <span class="nope" data-nope="${it.id}" role="button" title="${esc(t('scan.notThere'))}">✕</span></button>`;
       }).join('');
     }
 
@@ -552,7 +567,7 @@
         if (state === 'next') return `<span class="stop next" style="${pos}">${num}</span>`;
         return `<button class="stop now" data-item="${m.id}" style="--c:${task.color};${pos}">${num}
           ${m.label ? `<span class="tag">${esc(m.label)}</span>` : ''}
-          <span class="nope" data-nope="${m.id}" role="button" title="тут ничего нет">✕</span></button>`;
+          <span class="nope" data-nope="${m.id}" role="button" title="${esc(t('scan.noneHere'))}">✕</span></button>`;
       }).join('');
     }
 
@@ -565,23 +580,23 @@
       $('brief-zones').innerHTML = zoneMarkers(round).filter(m => m.no !== null).map(m =>
         `<span class="stop zone" style="--c:${m.color};left:${m.point[0] * 100}%;top:${m.point[1] * 100}%">${m.no}</span>`
       ).join('');
-      $('brief-title').textContent = b.zones > 2 ? 'Ого! Тут есть работа' : 'Так, посмотрим…';
+      $('brief-title').textContent = t(b.zones > 2 ? 'scan.briefTitleBig' : 'scan.briefTitleSmall');
       $('brief-reward').textContent = limitNote
-        ? `Тут ${b.zones} мест и ${b.steps} шагов.`
-        : `Если уберёшь всю комнату с моей помощью — заработаешь не меньше ${b.minSparkles} ${th.currencyEmoji}!`;
+        ? t('scan.briefRewardLimited', { zones: b.zones, steps: b.steps })
+        : t('scan.briefReward', { n: b.minSparkles, emoji: th.currencyEmoji });
       $('brief-plan').innerHTML = b.plan.map(x =>
         `<li><span class="n">${x.no ?? x.emoji}</span><span>${esc(x.text)}</span></li>`).join('');
       $('brief-lead').textContent = b.minutes
-        ? `Думаю, тебе предстоит (минут на ${b.minutes}):`
-        : 'Думаю, тебе предстоит:';
+        ? t('scan.briefLeadMinutes', { n: b.minutes })
+        : t('scan.briefLead');
       $('brief-limit').textContent = limitNote;
       $('brief-limit').classList.toggle('hidden', !limitNote);
       show('step-brief');
       renderHeader();
       const plan = b.plan.map(x => x.text).join(', ');
       say(limitNote
-        ? `Тут ${b.zones} мест: ${plan}. Начнём по шагам?`
-        : `Ого! Если уберёшь всю комнату, заработаешь не меньше ${b.minSparkles}. Думаю, тебе предстоит: ${plan}. Начнём по шагам?`);
+        ? t('scan.briefSayLimited', { zones: b.zones, plan })
+        : t('scan.briefSay', { n: b.minSparkles, plan }));
     }
 
     // Сюрприз (§330) — живая фраза от персонажа, но экран её не ждёт.
@@ -597,7 +612,7 @@
     // ── Сканирование кадра ──
     async function analyze(frame) {
       show('step-thinking');
-      $('thinking-text').textContent = 'Смотрю, что тут у тебя…';
+      $('thinking-text').textContent = t('scan.thinking');
       try {
         const scanned = await scan(frame.base64, {
           mode, roomType: room?.type, roomName: room?.name, surfaces: room?.surfaces,
@@ -607,7 +622,7 @@
         });
         if (!round.steps.length) {
           revokeFrame(frame); frameBefore = null;
-          toast(mode === 'overview' ? 'В комнате чисто! Попробуй другую.' : 'Тут уже чисто! Наведи на другое место.');
+          toast(t(mode === 'overview' ? 'scan.roomClean' : 'scan.spotClean'));
           await goCamera();
           return;
         }
@@ -616,7 +631,10 @@
         // брифинге, и в панели раунда: обещать искорки, которых не будет, нельзя.
         const spent = myRewards && isPlaceExhausted(myRewards, round.roomId, round.place);
         limitNote = spent
-          ? `${round.place ? `«${round.place}»` : 'Это место'} сегодня уже убирали ${PLACE_DAILY_LIMIT} раза — искорок и карточки за него сегодня не будет. Другое место в этой комнате считается.`
+          ? t('scan.placeLimitNote', {
+              place: round.place ? t('scan.placeNamed', { place: round.place }) : t('scan.placeThis'),
+              limit: PLACE_DAILY_LIMIT,
+            })
           : '';
         setBusy(true);
         startTimer();
@@ -628,7 +646,7 @@
       } catch (e) {
         console.error(e);
         revokeFrame(frame); frameBefore = null;
-        toast(e?.code === 429 ? 'Сканер отдыхает до завтра' : 'Не получилось разглядеть — сними ещё раз');
+        toast(t(e?.code === 429 ? 'scan.scannerResting' : 'scan.lookFailed'));
         await goCamera();
       }
     }
@@ -641,18 +659,18 @@
       const zone = currentZone(round);
       if (!zone) return;
       shootTarget = 'zone';
-      $('cam-hint').textContent = `Подойди к «${zone.label}» и сфоткай поближе — чтобы было видно каждую вещь`;
+      $('cam-hint').textContent = t('scan.camHintZone', { zone: zone.label });
       $('btn-cam-back').classList.remove('hidden');
       show('step-camera');
       renderHeader();
-      say(`Подойди к ${zone.label} и сфотографируй поближе`);
+      say(t('scan.sayZoneCloseup', { zone: zone.label }));
       await openCamera($('video'), $('cam-fallback'));
     }
 
     async function analyzeZone(frame) {
       const zone = currentZone(round);
       show('step-thinking');
-      $('thinking-text').textContent = 'Смотрю, что тут у тебя…';
+      $('thinking-text').textContent = t('scan.thinking');
       try {
         const scanned = await scan(frame.base64, {
           mode: 'closeup', roomType: room?.type, roomName: room?.name,
@@ -663,7 +681,7 @@
           // Подошли, сняли — а там уже чисто. Шаг закрываем без начисления:
           // искорки платим за уборку, а не за фотографию.
           revokeFrame(frame);
-          toast('Тут и правда чисто — идём дальше');
+          toast(t('scan.zoneClean'));
           round = skipStep(round);
           backToRoom();
           afterStep(null);
@@ -679,7 +697,7 @@
       } catch (e) {
         console.error(e);
         revokeFrame(frame);
-        toast(e?.code === 429 ? 'Сканер отдыхает до завтра' : 'Не получилось разглядеть — убери как видишь');
+        toast(t(e?.code === 429 ? 'scan.scannerResting' : 'scan.lookFailedZone'));
         backToRoom();
         show('step-round');
         renderRound();
@@ -697,16 +715,16 @@
     // ── Проверка «после» ──
     async function goVerify() {
       stopTimer();
-      $('after-title').textContent = 'Покажи, что получилось!';
-      $('after-sub').textContent = 'Сфотографируй то же место с того же ракурса.';
+      $('after-title').textContent = t('scan.afterTitle');
+      $('after-sub').textContent = t('scan.afterSub');
       show('step-after');
-      say('Покажи, что получилось!');
+      say(t('scan.afterTitle'));
       await openCamera($('video2'), $('cam-fallback2'));
     }
 
     async function runVerify(frame) {
       show('step-thinking');
-      $('thinking-text').textContent = 'Считаю, что осталось…';
+      $('thinking-text').textContent = t('scan.counting');
       let result = null;
       try {
         let referenceUrl = null;
@@ -723,15 +741,15 @@
       } catch (e) {
         console.warn('verify:', e);
         // Сеть подвела — не наказываем ребёнка: засчитываем как выполненное.
-        result = { ...EMPTY_VERIFY_UI, done: true, status: 'done', praise: 'Молодец!' };
+        result = { ...EMPTY_VERIFY_UI, done: true, status: 'done', praise: t('scan.verifyFallbackPraise') };
       }
       // Кадр «после» освобождаем не сразу: если не засчитано, на нём же и
       // показываем, что осталось.
       if (result.status === 'person' || result.status === 'retake' || result.status === 'unclear') {
         revokeFrame(frame);
-        toast(result.status === 'person' ? 'Отойди из кадра и сними ещё раз'
-          : result.status === 'unclear' ? 'Не разглядел поверхность — сними её целиком'
-          : 'Кадр не получился — сними ещё раз');
+        toast(t(result.status === 'person' ? 'scan.stepOut'
+          : result.status === 'unclear' ? 'scan.surfaceUnclear'
+          : 'scan.badFrame'));
         await goVerify();
         return;
       }
@@ -755,6 +773,8 @@
     function showRecheck(frame, result) {
       if (frameAfter) revokeFrame(frameAfter);
       frameAfter = frame;
+      recheckResult = result;
+      $('btn-recheck-finish').classList.toggle('hidden', !canFinishUnverified(settings));
       $('recheck-shot').src = frame.url;
       $('recheck-boxes').innerHTML = (result.boxes || []).map(b => {
         const [x, y, w, h] = b.box;
@@ -766,16 +786,16 @@
       // Кадр «после» ничем не отличается от «до» — это стоит назвать вслух,
       // иначе «почти у цели» после нулевой уборки звучит как издёвка.
       const same = result.improved === false;
-      const title = same ? 'Хм, тут всё как было' : (result.praise || 'Да ты почти у цели!');
+      const title = same ? t('scan.recheckSame') : (result.praise || t('scan.recheckTitle'));
       const text = phrase
-        ? `${same ? 'Начни с этого: ' : 'Осталось только '}${phrase}.`
-        : 'Убери то, что я обвёл красным, — и снимем заново.';
+        ? t(same ? 'scan.recheckStartWith' : 'scan.recheckLeftOnly', { what: phrase })
+        : t('scan.recheckGeneric');
       $('recheck-title').textContent = title;
       $('recheck-text').textContent = text;
       $('recheck-count').textContent = result.overReference
-        ? `На фото ещё ${result.afterCount} лишних вещей, а на эталоне родителей — ${result.referenceCount}.`
+        ? t('scan.recheckOverReference', { after: result.afterCount, reference: result.referenceCount })
         : (result.afterCount
-          ? `Вижу ${result.afterCount} лишних вещей. Оставить можно не больше ${VERIFY_LIMITS.others}, и мусора — ни одной штуки.`
+          ? t('scan.recheckCount', { n: result.afterCount, others: VERIFY_LIMITS.others })
           : '');
       show('step-recheck');
       say(`${title}. ${text}`);
@@ -784,6 +804,17 @@
     $('btn-recheck-go').onclick = async () => {
       if (frameAfter) { revokeFrame(frameAfter); frameAfter = null; }
       await goVerify();
+    };
+    // «Всё равно готово»: раунд закрывается как непройденный — искорки за шаги
+    // остаются, бонус за комнату, счётчик уборок и карточка не начисляются
+    // (это решает awardRound и правило карточки в finish). Врать о результате
+    // не нужно, а тупика и так нет.
+    $('btn-recheck-finish').onclick = async () => {
+      if (!canFinishUnverified(settings)) return;
+      const result = recheckResult;
+      if (frameAfter) { revokeFrame(frameAfter); frameAfter = null; }
+      recheckResult = null;
+      await finish(result || { ...EMPTY_VERIFY_UI });
     };
 
     // ── Финал: начисление и запись ──
@@ -796,11 +827,11 @@
       // Бонус за комнату — только за убранную по планке. Молча его не отнимаем:
       // ребёнок должен понимать, почему в этот раз искорок меньше.
       $('done-note').textContent = verifyResult?.done === true ? ''
-        : `Бонус за комнату — за полностью убранную: без мусора и не больше ${VERIFY_LIMITS.others} лишних вещей. Искорки за шаги остаются с тобой.`;
+        : t('scan.doneNote', { others: VERIFY_LIMITS.others });
       $('done-note').classList.toggle('hidden', verifyResult?.done === true);
       $('done-sparkles').textContent = round.sparkles;
       $('limit-note').classList.add('hidden');
-      $('done-currency').textContent = `${th.currencyEmoji} за эту уборку`;
+      $('done-currency').textContent = t('scan.doneForThis', { emoji: th.currencyEmoji });
       $('done-time').textContent = formatDuration(elapsedMs(round));
       $('done-items').textContent = p.itemsDone;
       $('done-extra').textContent = '';
@@ -830,15 +861,21 @@
         if (!award.awarded) {
           $('done-sparkles').textContent = '0';
           $('limit-note').textContent = award.reason === 'place-limit'
-            ? `${award.place ? `«${award.place}»` : 'Это место'} сегодня уже убирали ${award.limit} раза — искорки за него сегодня всё. Завтра снова.`
-            : `В этой комнате сегодня уже ${award.limit} уборок — искорки за неё сегодня всё. Завтра снова.`;
+            ? t('scan.limitPlace', {
+                place: award.place ? t('scan.placeNamed', { place: award.place }) : t('scan.placeThis'),
+                limit: award.limit,
+              })
+            : t('scan.limitRoom', { limit: award.limit });
           $('limit-note').classList.remove('hidden');
         }
-        $('done-extra').textContent = `Всего у тебя: ${th.currencyEmoji} ${next.currency} · заработано за всё время: ${next.earnedTotal} · уборок: ${next.cleanupsTotal}`;
+        $('done-extra').textContent = t('scan.doneTotals', {
+          emoji: th.currencyEmoji, currency: next.currency,
+          earned: next.earnedTotal, cleanups: next.cleanupsTotal,
+        });
         offerBonus(award.awarded);
       } catch (e) {
         console.error('save:', e);
-        $('done-extra').textContent = 'Искорки засчитаны, но записать не вышло — проверь связь.';
+        $('done-extra').textContent = t('scan.doneSaveFailed');
       }
     }
 
@@ -848,9 +885,9 @@
       const box = $('card-win');
       if (!card) { box.classList.add('hidden'); return; }
       $('card-img').src = card.url;
-      $('card-name').textContent = card.name || 'Новая карточка';
+      $('card-name').textContent = card.name || t('scan.cardNew');
       box.classList.remove('hidden');
-      say(`Новая карточка: ${card.name || ''}`);
+      say(t('scan.cardSay', { name: card.name || '' }));
     }
 
     // ── Бонусные задания ──
@@ -867,7 +904,7 @@
       $('bonus-emoji').textContent = bonus.emoji;
       $('bonus-title').textContent = bonus.title;
       $('bonus-hint').textContent = bonus.hint;
-      $('bonus-price').textContent = `+${bonus.sparkles} ${th.currencyEmoji}`;
+      $('bonus-price').textContent = t('scan.bonusPrice', { n: bonus.sparkles, emoji: th.currencyEmoji });
     }
     async function goBonusCamera() {
       if (!bonus) return;
@@ -879,39 +916,42 @@
     }
     async function shootBonus(source) {
       const frame = await grabFrame(source);
-      if (!frame) { toast('Темновато — включи свет и сними ещё раз'); return; }
+      if (!frame) { toast(t('scan.tooDark')); return; }
       stopCamera();
       show('step-thinking');
-      $('thinking-text').textContent = 'Смотрю, что получилось…';
+      $('thinking-text').textContent = t('scan.thinkingBonus');
       let result;
       try {
         result = await checkBonus(frame.base64, bonus);
       } catch (e) {
         console.warn('bonus:', e);
         // Сеть подвела — не наказываем: ребёнок работу сделал.
-        result = { done: true, praise: 'Отлично!', hint: '' };
+        result = { done: true, praise: t('scan.bonusFallbackPraise'), hint: '' };
       } finally { revokeFrame(frame); }
 
       if (!result.done) {
-        toast(result.hint || 'Не видно того, о чём просили — попробуй ещё раз');
+        toast(result.hint || t('scan.bonusNotSeen'));
         await goBonusCamera();
         return;
       }
       const res = awardBonus(myRewards, bonus);
       show('step-done');
-      if (!res.awarded) { toast('Это задание сегодня уже засчитано'); $('bonus-offer').classList.add('hidden'); return; }
+      if (!res.awarded) { toast(t('scan.bonusAlready')); $('bonus-offer').classList.add('hidden'); return; }
       myRewards = res.rewards;
       $('bonus-offer').classList.add('hidden');
-      $('done-praise').textContent = result.praise || `+${res.sparkles} ${th.currencyName}!`;
+      $('done-praise').textContent = result.praise || t('scan.bonusAward', { n: res.sparkles, currency: th.currencyName });
       $('done-sparkles').textContent = String(Number($('done-sparkles').textContent || 0) + res.sparkles);
       $('sparkles').textContent = `${th.currencyEmoji} ${Number(round.sparkles) + res.sparkles}`;
-      say(result.praise || 'Засчитано!');
+      say(result.praise || t('scan.bonusCounted'));
       try {
         await saveRewards(fid, profileId, myRewards);
-        $('done-extra').textContent = `Всего у тебя: ${th.currencyEmoji} ${myRewards.currency} · заработано за всё время: ${myRewards.earnedTotal} · уборок: ${myRewards.cleanupsTotal}`;
+        $('done-extra').textContent = t('scan.doneTotals', {
+          emoji: th.currencyEmoji, currency: myRewards.currency,
+          earned: myRewards.earnedTotal, cleanups: myRewards.cleanupsTotal,
+        });
         // Второй бонус за день, если он ещё положен.
         offerBonus(bonusesLeftToday(myRewards) > 0);
-      } catch (e) { console.error('save bonus:', e); toast('Искорки засчитаны, но записать не вышло'); }
+      } catch (e) { console.error('save bonus:', e); toast(t('scan.bonusSaveFailed')); }
     }
     $('btn-bonus-go').onclick = goBonusCamera;
     $('btn-bonus-skip').onclick = () => { bonus = null; $('bonus-offer').classList.add('hidden'); };
@@ -923,9 +963,7 @@
     async function goCamera() {
       shootTarget = 'main';
       $('btn-cam-back').classList.add('hidden');
-      $('cam-hint').textContent = mode === 'overview'
-        ? 'Встань у двери и покажи всю комнату целиком — и жми большую кнопку'
-        : 'Наведи камеру на стол или полку — и жми большую кнопку';
+      $('cam-hint').textContent = t(mode === 'overview' ? 'scan.camHintOverview' : 'scan.camHintCloseup');
       show('step-camera');
       renderHeader();
       await openCamera($('video'), $('cam-fallback'));
@@ -933,13 +971,13 @@
 
     // Комната выбрана — спрашиваем, что именно убираем.
     function goMode() {
-      $('mode-title').textContent = room ? `${room.icon || '🏠'} ${room.name}: что убираем?` : 'Что убираем?';
+      $('mode-title').textContent = room
+        ? t('scan.modeTitleRoom', { room: `${room.icon || '🏠'} ${room.name}` })
+        : t('scan.modeTitle');
       // Лимит теперь на МЕСТО, а не на комнату, и место известно только после
       // съёмки. Здесь предупреждаем лишь про страховочный предел на комнату.
       const done = myRewards && isRoomExhausted(myRewards, room?.id || null);
-      $('mode-limit').textContent = done
-        ? `В этой комнате сегодня уже ${ROOM_DAILY_LIMIT} уборок — искорок за неё сегодня больше не будет. Убрать всё равно можно, завтра снова считается.`
-        : '';
+      $('mode-limit').textContent = done ? t('scan.roomLimitAhead', { limit: ROOM_DAILY_LIMIT }) : '';
       $('mode-limit').classList.toggle('hidden', !done);
       $('btn-back-rooms').classList.toggle('hidden', rooms.length < 2);
       show('step-mode');
@@ -948,7 +986,7 @@
 
     async function shoot(source) {
       const frame = await grabFrame(source);
-      if (!frame) { toast('Темновато — включи свет и сними ещё раз'); return; }
+      if (!frame) { toast(t('scan.tooDark')); return; }
       stopCamera();
       // Кадр очага — не «фото до» всей комнаты: проверять в конце будем комнату.
       if (shootTarget === 'zone') { await analyzeZone(frame); return; }
@@ -958,7 +996,7 @@
     }
     async function shootAfter(source) {
       const frame = await grabFrame(source);
-      if (!frame) { toast('Темновато — включи свет и сними ещё раз'); return; }
+      if (!frame) { toast(t('scan.tooDark')); return; }
       stopCamera();
       await runVerify(frame);
     }
@@ -1030,7 +1068,7 @@
       stopCamera(); stopTimer(); setBusy(false);
       if (!round || round.finishedAt || !totalSparkles(round)) return;
       e.preventDefault();
-      toast('Сохраняю искорки…');
+      toast(t('scan.savingSparkles'));
       try {
         if (isCloseupOpen(round)) round = finishCloseup(round);
         round = finishRound(round, { done: false, status: 'left', praise: '', missed: [] });
@@ -1055,7 +1093,8 @@
         return `
         <button class="avatar-btn room-btn" data-room="${esc(r.id)}">${esc(r.icon || '🏠')}
           <span class="name">${esc(r.name)}</span>
-          <span class="muted" style="font-size:13px">${full ? 'на сегодня всё' : (done ? `сегодня уборок: ${done}` : 'сегодня ещё не убирали')}</span>
+          <span class="muted" style="font-size:13px">${esc(full ? t('scan.roomDoneToday')
+            : (done ? t('scan.roomCountToday', { n: done }) : t('scan.roomNoneToday')))}</span>
         </button>`;
       }).join('');
       $('rooms').querySelectorAll('[data-room]').forEach(el => {
@@ -1076,12 +1115,16 @@
 
       try { myRewards = await getRewards(fid, profileId); } catch (e) { console.warn('rewards:', e); }
 
-      // Музыка (§ плейлист задаёт родитель в настройках семьи).
+      // Настройки семьи: темы (их придумал родитель), язык, строгость проверки
+      // и плейлист. Тему подхватываем сразу — экран уже нарисован пресетом.
       try {
-        const settings = await getSettings(fid);
+        settings = await getSettings(fid);
+        // Второй планшет, где язык ещё не выбирали, подхватывает язык семьи.
+        applyFamilyLang(settings); applyFamilyThemes(settings); applyI18n();
+        adoptTheme();
         const url = settings?.playlists?.[th.id];
         if (url) { $('btn-music').href = url; $('btn-music').classList.remove('hidden'); }
-      } catch (_) {}
+      } catch (e) { console.warn('settings:', e); }
 
       // Комнаты в порядке маршрута: у ребёнка свой порядок, иначе общий по дому.
       try {
@@ -1101,7 +1144,7 @@
       if (room) { goMode(); return; }
       if (!rooms.length) {
         // Карты дома ещё нет — это не повод не убирать: сканер работает и так.
-        $('room-hint').textContent = 'Карта дома ещё не создана — можно убирать и без неё.';
+        $('room-hint').textContent = t('scan.noHomeMap');
         $('rooms').innerHTML = '';
         goMode();
         return;

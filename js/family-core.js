@@ -8,6 +8,15 @@
 //   families/{fid}/members/{uid} — источник прав {role: 'parent'|'child', addedBy, joinedAt}
 // Роли: parent (≈owner) | child (≈editor, но заперт в свой профиль profileId==uid).
 
+// Человеческие тексты (подписи категорий, видов очагов, образов, рангов) живут
+// не здесь, а в js/i18n.js: ядро знает только стабильные id, а как это звучит
+// по-русски или по-английски — решает словарь. Поэтому все подписи ниже —
+// функции, а не константы: язык переключается в родительской части на лету.
+import { t, tList } from './i18n.js';
+import {
+  defaultThemes, normalizeThemes, resolveTheme, migrateLegacyThemeId,
+} from './themes-core.js';
+
 // ── Роли ────────────────────────────────────────────────────────────────────
 export const ROLES = ['parent', 'child'];
 export const PARENT = 'parent';
@@ -77,23 +86,26 @@ export const MAX_SURFACE_NAME = 24;
 
 // Готовые точки под тип комнаты: нажать быстрее, чем печатать, а названия
 // получаются одинаковыми у всех комнат — ровно то, что нужно сканеру.
+// Здесь только id: подпись берётся из словаря, как и всё, что читает человек.
 export const SURFACE_SUGGESTIONS = {
-  kitchen: ['Столешница', 'Обеденный стол', 'Раковина', 'Пол'],
-  bedroom_child: ['Стол', 'Полка', 'Кровать', 'Тумбочка', 'Пол'],
-  bathroom: ['Раковина', 'Столешница', 'Полка', 'Пол'],
-  living: ['Журнальный столик', 'Полка', 'Диван', 'Пол'],
-  hall: ['Полка для обуви', 'Тумбочка', 'Вешалка', 'Пол'],
-  utility: ['Стеллаж', 'Столешница', 'Пол'],
-  other: ['Стол', 'Полка', 'Пол'],
+  kitchen: ['counter', 'diningTable', 'sink', 'floor'],
+  bedroom_child: ['desk', 'shelf', 'bed', 'nightstand', 'floor'],
+  bathroom: ['sink', 'counter', 'shelf', 'floor'],
+  living: ['coffeeTable', 'shelf', 'sofa', 'floor'],
+  hall: ['shoeRack', 'nightstand', 'coatRack', 'floor'],
+  utility: ['shelvingUnit', 'counter', 'floor'],
+  other: ['desk', 'shelf', 'floor'],
 };
+export const SPOT_IDS = [...new Set(Object.values(SURFACE_SUGGESTIONS).flat())];
 export function surfaceSuggestions(roomType) {
-  return SURFACE_SUGGESTIONS[normalizeRoomType(roomType)] || SURFACE_SUGGESTIONS.other;
+  const ids = SURFACE_SUGGESTIONS[normalizeRoomType(roomType)] || SURFACE_SUGGESTIONS.other;
+  return normalizeSurfaces(ids.map(id => t(`spot.${id}`)));
 }
 // «стол  у ОКНА » → «Стол у окна». Регистр и лишние пробелы — не различия:
 // без этого «Стол» и «стол» станут двумя разными точками одной комнаты.
 export function normalizeSurfaceName(raw) {
-  const t = String(raw || '').replace(/[«»"'`]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_SURFACE_NAME);
-  return t ? t[0].toUpperCase() + t.slice(1).toLowerCase() : '';
+  const name = String(raw || '').replace(/[«»"'`]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_SURFACE_NAME);
+  return name ? name[0].toUpperCase() + name.slice(1).toLowerCase() : '';
 }
 export function normalizeSurfaces(list) {
   const out = [];
@@ -114,15 +126,8 @@ export function normalizeSurfaces(list) {
 // проверка решает, стало ли чисто. Раньше требования были «лайтовые» — снять
 // одежду со стула и всё; норма поднимает планку до нормально организованной
 // комнаты, но остаётся посильной для ребёнка.
-export const TIDY_STANDARD = [
-  'Пустая поверхность — норма. На столе, полке, тумбе, подоконнике не должно оставаться ничего лишнего.',
-  'Исключение — письменный стол: на нём допустимы ОДНА стопка бумаг и ОДНА настольная лампа. Всё остальное убирается.',
-  'На стульях не должно быть вещей: стул — чтобы сидеть, а не чтобы класть.',
-  'Кровать заправлена или ровно накрыта одеялом, без комков и свисающего белья.',
-  'На полу не место коробкам, ящикам, сумкам, проводам и удлинителям — пол свободен.',
-  'Полная урна (особенно с бумагами) — это отдельная задача: её выносят.',
-];
-export const TIDY_STANDARD_TEXT = TIDY_STANDARD.map(s => `- ${s}`).join('\n');
+export function tidyStandard() { return tList('tidy.standard'); }
+export function tidyStandardText() { return tidyStandard().map(x => `- ${x}`).join('\n'); }
 
 // Планка проверки «после»: по ней решается, засчитана уборка или нет.
 // Требования были размытые («убрано большинство»), и один и тот же стол
@@ -131,35 +136,46 @@ export const TIDY_STANDARD_TEXT = TIDY_STANDARD.map(s => `- ${s}`).join('\n');
 // Тройка — не придирка, а допуск: одна забытая кружка и книжка уборку не
 // отменяют, а вот пять предметов — это уже неубранный стол.
 export const VERIFY_LIMITS = { trash: 0, others: 3 };
-export const VERIFY_LIMITS_TEXT = [
-  `Мусора (фантики, бумажки, упаковки, огрызки) на поверхности не должно остаться НИ ОДНОГО.`,
-  `Прочих посторонних предметов — не больше ${VERIFY_LIMITS.others} суммарно на всю поверхность.`,
-  'Считается пол, стол, тумбочка, подоконник, столешница в кухне и ванной.',
-  'Мебель, техника, настольная лампа и ОДНА стопка бумаг на письменном столе — это норма, их не считай.',
-].map(s => `- ${s}`).join('\n');
+export function verifyLimitsText() {
+  return tList('verify.limits')
+    .map(x => `- ${x.replace('{others}', String(VERIFY_LIMITS.others))}`).join('\n');
+}
 
 // ── Цветовой словарь действий (§232, фиксированный — модель НЕ выдумывает) ───
 // Единственное, что тема НЕ перекрашивает (§371). category — из закрытого списка.
+// Здесь — только то, что от языка не зависит: id, цвет и эмодзи. Инструкция и
+// «куда нести» приходят из словаря по ключам action.<id>.instruction/.target.
 export const ACTION_CATEGORIES = [
-  { id: 'paper',            color: '#2F6BFF', emoji: '🔵', instruction: 'Собери все бумаги в одну стопку', target: 'На край стола' },
-  { id: 'stationery',       color: '#25A55A', emoji: '🟢', instruction: 'Поставь карандаши и ручки в стакан', target: 'Стакан' },
-  { id: 'trash',            color: '#8B5CF6', emoji: '🟣', instruction: 'Выброси мусор', target: 'Ведро' },
-  { id: 'dishes',           color: '#F0871E', emoji: '🟠', instruction: 'Отнеси посуду', target: 'Кухня' },
-  { id: 'textile',          color: '#F5C518', emoji: '🟡', instruction: 'Текстиль: грязное в корзину, чистое на место', target: 'Корзина или полка' },
-  { id: 'toys',             color: '#F472B6', emoji: '🩷', instruction: 'Игрушки в свой ящик', target: 'Ящик' },
+  { id: 'paper',             color: '#2F6BFF', emoji: '🔵' },
+  { id: 'stationery',        color: '#25A55A', emoji: '🟢' },
+  { id: 'trash',             color: '#8B5CF6', emoji: '🟣' },
+  { id: 'dishes',            color: '#F0871E', emoji: '🟠' },
+  { id: 'textile',           color: '#F5C518', emoji: '🟡' },
+  { id: 'toys',              color: '#F472B6', emoji: '🩷' },
   // Пол — отдельная категория, а не «мусор»: коробка или удлинитель нужны,
   // просто им не место на полу.
-  { id: 'floor',            color: '#8D6E63', emoji: '🟤', instruction: 'Освободи пол: коробки, сумки, провода — по местам', target: 'Полка, шкаф, под стол' },
+  { id: 'floor',             color: '#8D6E63', emoji: '🟤' },
   // Заправить кровать — не «отнести вещь», а привести в порядок то, что уже
   // стоит на своём месте. Шаг всё равно один: сделал — отметил.
-  { id: 'make_bed',         color: '#00ACC1', emoji: '🛏', instruction: 'Заправь кровать или ровно накрой одеялом', target: 'Кровать' },
-  { id: 'belongs_elsewhere',color: '#9AA3AE', emoji: '⚪️', instruction: 'Эта вещь здесь не живёт. Вспомни, где её место, и отнеси', target: 'Туда, где она живёт' },
+  { id: 'make_bed',          color: '#00ACC1', emoji: '🛏' },
+  { id: 'belongs_elsewhere', color: '#9AA3AE', emoji: '⚪️' },
   // Всегда последний шаг раунда (см. LAST_CATEGORIES в round-core): выносить
   // урну имеет смысл, когда весь мусор комнаты уже в неё сложен.
-  { id: 'bin_full',         color: '#E53935', emoji: '🗑', instruction: 'Урна полная — вынеси её', target: 'Мусорное ведро на кухне' },
+  { id: 'bin_full',          color: '#E53935', emoji: '🗑' },
 ];
 export const ACTION_IDS = ACTION_CATEGORIES.map(c => c.id);
 const ACTION_BY_ID = new Map(ACTION_CATEGORIES.map(c => [c.id, c]));
+// Локализованная категория: цвет и эмодзи из списка выше, тексты — из словаря.
+// Собирается на каждый вызов, потому что язык можно переключить, не перезагружая
+// экран (index.html перерисовывает себя целиком).
+function localizeAction(base) {
+  return base && {
+    ...base,
+    instruction: t(`action.${base.id}.instruction`),
+    target: t(`action.${base.id}.target`),
+  };
+}
+export function actionCategories() { return ACTION_CATEGORIES.map(localizeAction); }
 
 // Старые id, которые ещё могут прийти из сохранённого прогресса или от модели.
 // clothes → textile: «одежда» заставляла и модель, и ребёнка спотыкаться на
@@ -171,7 +187,7 @@ export function normalizeActionCategory(id) {
   const key = String(id || '');
   return CATEGORY_ALIASES[key] || key;
 }
-export function actionCategory(id) { return ACTION_BY_ID.get(normalizeActionCategory(id)) || null; }
+export function actionCategory(id) { return localizeAction(ACTION_BY_ID.get(normalizeActionCategory(id))) || null; }
 export function isValidActionCategory(id) { return ACTION_BY_ID.has(normalizeActionCategory(id)); }
 
 // ── Контекст кадра: за что вообще можно предложить бонус ────────────────────
@@ -186,12 +202,7 @@ export function isValidActionCategory(id) { return ACTION_BY_ID.has(normalizeAct
 //   cleaned — что ребёнок ТОЛЬКО ЧТО убрал. Выводим сами из закрытых шагов
 //             раунда (round-core.roundContextTags) — модели тут верить не в чем.
 export const SEEN_TAGS = ['plant', 'mirror', 'shoes', 'books'];
-export const SEEN_TAGS_TEXT = [
-  'plant — комнатное растение в горшке',
-  'mirror — зеркало',
-  'shoes — обувь на полу или на полке',
-  'books — книги на полке или стопкой',
-].map(s => `  ${s}`).join('\n');
+export function seenTagsText() { return SEEN_TAGS.map(tag => `  ${t(`seen.${tag}`)}`).join('\n'); }
 export const CLEANED_TAGS = ['surface', 'floor', 'textile', 'bed', 'trash', 'wiped'];
 export function normalizeTags(list, allowed) {
   const ok = new Set(allowed);
@@ -212,24 +223,37 @@ export function normalizeTags(list, allowed) {
 // color/instruction/target — запасные: у очага обычно есть категория действия
 // со своим цветом и текстом. Своих не хватает только «протереть» — категории
 // для него в словаре нет и быть не должно (сканер такое не размечает).
+// Как и у категорий, здесь только неязыковое: id, эмодзи, цвет и то, просит ли
+// очаг крупный план. Название и строка плана — по ключам zone.<id>.name/.plan.
 export const ZONE_KINDS = [
-  { id: 'chair',   emoji: '🪑', name: 'стул',        plan: 'убрать вещи со стула',     closeup: false, color: '#F5C518' },
-  { id: 'floor',   emoji: '🟤', name: 'пол',         plan: 'очистить пол от лишнего',  closeup: false, color: '#8D6E63' },
-  { id: 'bed',     emoji: '🛏', name: 'кровать',     plan: 'заправить кровать',        closeup: false, color: '#00ACC1' },
-  { id: 'desk',    emoji: '📝', name: 'стол',        plan: 'навести порядок на столе', closeup: true,  color: '#2F6BFF' },
-  { id: 'shelf',   emoji: '📚', name: 'полка',       plan: 'разобрать полку',          closeup: true,  color: '#25A55A' },
-  { id: 'surface', emoji: '🪟', name: 'поверхность', plan: 'освободить поверхность',   closeup: true,  color: '#F0871E' },
+  { id: 'chair',   emoji: '🪑', closeup: false, color: '#F5C518' },
+  { id: 'floor',   emoji: '🟤', closeup: false, color: '#8D6E63' },
+  { id: 'bed',     emoji: '🛏', closeup: false, color: '#00ACC1' },
+  { id: 'desk',    emoji: '📝', closeup: true,  color: '#2F6BFF' },
+  { id: 'shelf',   emoji: '📚', closeup: true,  color: '#25A55A' },
+  { id: 'surface', emoji: '🪟', closeup: true,  color: '#F0871E' },
   // Протирание не приходит от модели: пыли на фото не видно. Этот шаг добавляем
   // сами — к поверхности, которую ребёнок только что освободил (см. round-core).
-  { id: 'wipe',    emoji: '🧽', name: 'протереть',   plan: 'протереть поверхность',    closeup: false, color: '#00BFA5',
-    instruction: 'Протри поверхность', target: 'Тряпкой или влажной салфеткой' },
-  { id: 'bin',     emoji: '🗑', name: 'мусор',       plan: 'вынести мусор',            closeup: false, color: '#E53935' },
-  { id: 'other',   emoji: '✨', name: 'ещё',         plan: 'убрать лишнее',            closeup: false, color: '#9AA3AE' },
+  // Своих instruction/target нет ни у кого, кроме него: у остальных очагов есть
+  // категория действия со своим текстом.
+  { id: 'wipe',    emoji: '🧽', closeup: false, color: '#00BFA5', hasOwnText: true },
+  { id: 'bin',     emoji: '🗑', closeup: false, color: '#E53935' },
+  { id: 'other',   emoji: '✨', closeup: false, color: '#9AA3AE' },
 ];
 export const ZONE_IDS = ZONE_KINDS.map(z => z.id);
 const ZONE_BY_ID = new Map(ZONE_KINDS.map(z => [z.id, z]));
+function localizeZone(base) {
+  if (!base) return base;
+  const out = { ...base, name: t(`zone.${base.id}.name`), plan: t(`zone.${base.id}.plan`) };
+  if (base.hasOwnText) {
+    out.instruction = t(`zone.${base.id}.instruction`);
+    out.target = t(`zone.${base.id}.target`);
+  }
+  return out;
+}
+export function zoneKinds() { return ZONE_KINDS.map(localizeZone); }
 export function normalizeZoneKind(id) { return ZONE_BY_ID.has(String(id)) ? String(id) : 'other'; }
-export function zoneKind(id) { return ZONE_BY_ID.get(normalizeZoneKind(id)); }
+export function zoneKind(id) { return localizeZone(ZONE_BY_ID.get(normalizeZoneKind(id))); }
 // Очаг из нескольких мелочей просит крупный план; одна коробка на полу — нет.
 // Слово модели весомее умолчания: она видит кадр, а мы — только вид очага.
 export function zoneNeedsCloseup(kind, itemsEstimate, said) {
@@ -237,42 +261,61 @@ export function zoneNeedsCloseup(kind, itemsEstimate, said) {
   return zoneKind(kind).closeup && (Number(itemsEstimate) || 0) >= 3;
 }
 
-// ── Темы (§43 ТЗ). Механика одна, различаются палитра/тексты/шаг/озвучка ────
-// Вынесены отдельно, чтобы подменить франшизные отсылки за час (§51).
-export const THEMES = {
-  minion: {
-    id: 'minion', label: 'Миньон',
-    currencyName: 'бананы', currencyEmoji: '🍌',
-    voice: 'loud', stepGranularity: 'fine', tts: true,
-    colors: { primary: '#FFD836', secondary: '#3A5DA8', bg: '#FFFFFF', ink: '#111111', accent: '#3A5DA8' },
-    praiseWord: 'Банана!',
-  },
-  jedi: {
-    id: 'jedi', label: 'Джедай',
-    currencyName: 'кристаллы', currencyEmoji: '💎',
-    voice: 'calm', stepGranularity: 'coarse', tts: false,
-    colors: { primary: '#12203F', secondary: '#4FC3F7', bg: '#0B1220', ink: '#E8EEF7', accent: '#5BE37D' },
-    praiseWord: 'Ты справился.',
-  },
-};
-export const THEME_IDS = Object.keys(THEMES);
+// ── Темы (§43 ТЗ) — их придумывает СЕМЬЯ, а не мы ────────────────────────────
+// Раньше здесь лежал зашитый объект THEMES с двумя франшизными образами.
+// Теперь темы — данные семьи (families/{fid}/settings/app → themes), и правит
+// их родитель на themes.html: имя, палитра, названия рангов, карточки.
+// Форма, палитра и правила — в js/themes-core.js; здесь только РЕЕСТР: какие
+// темы сейчас у семьи и как по id получить готовую к отрисовке тему.
+//
+// Реестр модульный, а не параметр каждой функции, ровно потому, что тему
+// спрашивает почти каждый экран (`theme(id).currencyEmoji` в счётчике искорок,
+// в магазине, в коллекции). Экран ставит темы семьи один раз после загрузки
+// настроек — applyFamilyThemes(settings) в js/store.js, — дальше всё работает
+// как раньше. Пока настройки не загружены, в реестре пресеты: приложение
+// рисуется, а не падает.
+let FAMILY_THEMES = defaultThemes();
+export function setFamilyThemes(list) { FAMILY_THEMES = normalizeThemes(list); return FAMILY_THEMES; }
+// Документы тем как есть — для экрана родителя (там их правят, а не рисуют).
+export function familyThemes() { return FAMILY_THEMES.map(th => ({ ...th, colors: { ...th.colors }, ranks: [...th.ranks] })); }
+export function themeIds() { return FAMILY_THEMES.map(th => th.id); }
 // ВАЖНО: у профиля НЕТ темы по умолчанию. Тема — выбор самого ребёнка на входе
-// («Кто ты сегодня?»), а не настройка, которую задаёт родитель. Эта константа —
-// только фолбэк отрисовки, пока выбор не сделан.
-export const FALLBACK_THEME = 'minion';
-export function theme(id) { return THEMES[id] || THEMES[FALLBACK_THEME]; }
-export function isValidTheme(id) { return Object.prototype.hasOwnProperty.call(THEMES, id); }
-export function normalizeTheme(id) { return isValidTheme(id) ? id : null; }
-
-// Ранги Джедая (§37) — прогресс только растёт.
-export const JEDI_RANKS = ['Юнлинг', 'Падаван', 'Рыцарь', 'Мастер'];
-export function rankForCleanups(n) {
-  const c = Number(n) || 0;
-  if (c >= 60) return JEDI_RANKS[3];
-  if (c >= 25) return JEDI_RANKS[2];
-  if (c >= 8) return JEDI_RANKS[1];
-  return JEDI_RANKS[0];
+// («Кто ты сегодня?»), а не настройка, которую задаёт родитель. Первая тема
+// семьи — только фолбэк отрисовки, пока выбор не сделан.
+export function fallbackThemeId() { return FAMILY_THEMES[0].id; }
+export function theme(id) {
+  const key = migrateLegacyThemeId(id);
+  return resolveTheme(FAMILY_THEMES.find(th => th.id === key) || FAMILY_THEMES[0]);
 }
+export function isValidTheme(id) { return FAMILY_THEMES.some(th => th.id === migrateLegacyThemeId(id)); }
+export function normalizeTheme(id) {
+  const key = migrateLegacyThemeId(id);
+  return isValidTheme(key) ? key : null;
+}
+
+// Ранги (§37) — прогресс только растёт.
+// Пороги — здесь (они про механику), названия — у темы: «Яйцо → Тираннозавр»
+// придумывает родитель под интересы ребёнка, а не мы под чужую франшизу.
+export const RANK_THRESHOLDS = [0, 8, 25, 60];
+export function rankNames(themeId) { return theme(themeId).ranks; }
+export function rankIndexForCleanups(n) {
+  const c = Number(n) || 0;
+  let i = 0;
+  while (i + 1 < RANK_THRESHOLDS.length && c >= RANK_THRESHOLDS[i + 1]) i += 1;
+  return i;
+}
+export function rankForCleanups(n, themeId) { return rankNames(themeId)[rankIndexForCleanups(n)]; }
+
+// ── Проверка по фото: обязательна или нет (настройка семьи) ─────────────────
+// Умолчание — обязательна: проверка «после» и есть то, ради чего снимают фото,
+// и именно она держит счётчик уборок честным. Но семьям с малышом, у которого
+// «убрано» и «убрано по эталону» — разные вселенные, нужен выход: с выключенной
+// настройкой ребёнок видит разбор кадра и может закрыть уборку сам.
+// Переключатель — в разделе эталонов (reference.html): там же объяснено, с чем
+// сравнивается «после».
+export function photoCheckRequired(settings) { return settings?.photoCheckRequired !== false; }
+// Можно ли закрыть раунд, который проверка не засчитала.
+export function canFinishUnverified(settings) { return !photoCheckRequired(settings); }
 
 // ── Награды (§317). Валюта начисляется только за ЗАКРЫТЫЕ шаги. ──────────────
 // ДВА числа, а не одно:
@@ -280,21 +323,21 @@ export function rankForCleanups(n) {
 //   earnedTotal — сколько заработано ЗА ВСЁ ВРЕМЯ: не убывает никогда.
 // Разделены ради покупок: тратить надо, а обнулять достигнутое нельзя (§336).
 // Ранг и «сколько ты уже наработал» считаются от earnedTotal и cleanupsTotal —
-// покупка мороженого не понижает ребёнка из Рыцаря обратно в Падаваны.
+// покупка мороженого не понижает ребёнка из третьего ранга обратно во второй.
 export const SPARKLES = { step: 1, room: 5, day: 15 };
 export function sparklesFor(kind) { return SPARKLES[kind] || 0; }
 
 // Что принадлежит РЕБЁНКУ, а что ТЕМЕ:
 //   валюта, счётчик уборок, реальные награды — общие: ребёнок один, тему он
 //   меняет как настроение, и прогресс за это не должен теряться (§49);
-//   коллекция карточек — своя у каждой темы: у миньонов свои существа, у
-//   джедаев свои. Смена темы показывает другую витрину, ничего не отнимая.
+//   коллекция карточек — своя у каждой темы: у «динозавров» свои карточки, у
+//   «космоса» свои. Смена темы показывает другую витрину, ничего не отнимая.
 export function emptyRewards() {
   return {
     currency: 0,      // баланс: тратится покупками
     earnedTotal: 0,   // заработано за всё время: только растёт
     cleanupsTotal: 0,
-    cardsByTheme: Object.fromEntries(THEME_IDS.map(t => [t, []])),
+    cardsByTheme: Object.fromEntries(themeIds().map(t => [t, []])),
     realRewards: [],   // покупки реальных наград, см. js/shop-core.js
     dailyRooms: { day: null, rooms: {}, places: {} }, // дневной лимит, см. js/limits-core.js
     dailyBonus: { day: null, ids: {}, total: 0 },      // бонусные задания, см. js/bonus-core.js
@@ -328,13 +371,17 @@ export function normalizeRewards(raw) {
   const r = (raw && typeof raw === 'object') ? raw : {};
   const base = emptyRewards();
   const byTheme = { ...base.cardsByTheme };
-  for (const t of THEME_IDS) {
-    const list = r.cardsByTheme?.[t];
-    if (Array.isArray(list)) byTheme[t] = list.slice();
+  // Читаем ВСЕ коллекции документа, а не только темы, которые есть у семьи
+  // сейчас: родитель мог удалить тему или переименовать franchise-id прошлой
+  // версии — добытое при этом не пропадает (§336), просто не показывается.
+  for (const [rawId, list] of Object.entries(r.cardsByTheme || {})) {
+    if (!Array.isArray(list)) continue;
+    const id = migrateLegacyThemeId(rawId);
+    byTheme[id] = Array.from(new Set([...(byTheme[id] || []), ...list]));
   }
   if (Array.isArray(r.cards) && r.cards.length) {
-    const legacy = byTheme[FALLBACK_THEME] || [];
-    byTheme[FALLBACK_THEME] = Array.from(new Set([...legacy, ...r.cards]));
+    const legacy = byTheme[fallbackThemeId()] || [];
+    byTheme[fallbackThemeId()] = Array.from(new Set([...legacy, ...r.cards]));
   }
   const currency = Number(r.currency) || 0;
   return {
@@ -351,13 +398,14 @@ export function normalizeRewards(raw) {
 }
 // Коллекция конкретной темы (витрина, куда ребёнок возвращается).
 export function cardsForTheme(rewards, themeId) {
-  return normalizeRewards(rewards).cardsByTheme[normalizeTheme(themeId) || FALLBACK_THEME] || [];
+  return normalizeRewards(rewards).cardsByTheme[normalizeTheme(themeId) || fallbackThemeId()] || [];
 }
 // Чистое добавление карточки в коллекцию темы (без дублей). Вход не мутирует.
 export function addCard(rewards, themeId, cardId) {
   const out = normalizeRewards(rewards);
-  const t = normalizeTheme(themeId) || FALLBACK_THEME;
-  if (cardId && !out.cardsByTheme[t].includes(cardId)) out.cardsByTheme[t] = [...out.cardsByTheme[t], cardId];
+  const t = normalizeTheme(themeId) || fallbackThemeId();
+  const owned = out.cardsByTheme[t] || [];
+  if (cardId && !owned.includes(cardId)) out.cardsByTheme[t] = [...owned, cardId];
   return out;
 }
 // Начисление валюты — всегда на ребёнка, независимо от выбранной темы.
@@ -536,8 +584,9 @@ export function sanitizeVerify(raw) {
     label: String(x?.label || '').trim(),
     count: Math.max(1, Math.round(Number(x?.count) || 1)),
     category: isValidActionCategory(x?.category) ? normalizeActionCategory(x.category) : null,
-    // Готовая фраза от модели: русские падежи и числительные она согласует
-    // лучше любого нашего шаблона («выбросить три бумажки»).
+    // Готовая фраза от модели: падежи, числительные и артикли она согласует
+    // лучше любого нашего шаблона («выбросить три бумажки» / «throw out three
+    // scraps of paper»). Язык фразы задаёт промпт (js/ai.js).
     todo: String(x?.todo || '').trim(),
   })).filter(x => x.label || x.todo);
   // Рамки вокруг того, что осталось: экран покажет их прямо на «финальном»
@@ -599,11 +648,11 @@ function countOrNull(v) {
 // именно осталось, иначе «почти получилось» звучит как отказ без объяснения.
 export function missedPhrase(left, limit = 3) {
   const parts = (Array.isArray(left) ? left : [])
-    .map(x => (typeof x === 'string' ? x : (x?.todo || (x?.label ? `убрать: ${x.label}` : ''))))
+    .map(x => (typeof x === 'string' ? x : (x?.todo || (x?.label ? t('missed.putAway', { label: x.label }) : ''))))
     .filter(Boolean).slice(0, limit);
   if (!parts.length) return '';
   if (parts.length === 1) return parts[0];
-  return `${parts.slice(0, -1).join(', ')} и ${parts[parts.length - 1]}`;
+  return `${parts.slice(0, -1).join(', ')} ${t('missed.and')} ${parts[parts.length - 1]}`;
 }
 
 // Санитайзинг ответа /parse-home (§188): этажи → комнаты с валидным типом.
@@ -625,11 +674,10 @@ export function sanitizeHome(raw) {
 }
 
 // ── Карта дома: подписи типов, порядок обхода, reorder (для онбординга) ──────
-export const ROOM_TYPE_LABELS = {
-  kitchen: 'Кухня', bedroom_child: 'Детская', bathroom: 'Ванная',
-  living: 'Гостиная', hall: 'Прихожая', utility: 'Хозяйственная', other: 'Другое',
-};
-export function roomTypeLabel(t) { return ROOM_TYPE_LABELS[t] || ROOM_TYPE_LABELS.other; }
+export function roomTypeLabels() {
+  return Object.fromEntries(ROOM_TYPES.map(id => [id, t(`roomType.${id}`)]));
+}
+export function roomTypeLabel(type) { return t(`roomType.${normalizeRoomType(type)}`); }
 
 // Плоский список комнат в порядке этажей (каждой добавляется имя этажа).
 export function roomsInOrder(home) {

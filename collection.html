@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Коллекция — Наведи и убери</title>
+  <title data-i18n="title.collection">Collection — Point &amp; Tidy</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#3A5DA8">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -27,10 +27,10 @@
 <body>
   <div class="wrap col">
     <div class="row" style="justify-content:space-between">
-      <a class="back" href="index.html">← Назад</a>
+      <a class="back" href="index.html" data-i18n="common.back">← Back</a>
       <span class="chip" id="theme-chip">—</span>
     </div>
-    <h1 id="title">Моя коллекция</h1>
+    <h1 id="title" data-i18n="collection.title">My collection</h1>
     <div class="row"><span class="chip" id="count">—</span></div>
     <div class="bar"><i id="bar" style="width:0%"></i></div>
     <p class="muted" id="hint"></p>
@@ -40,17 +40,22 @@
   <script type="module">
     import {
       initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
-      listCards, getRewards, getActiveProfileId,
+      listCards, getRewards, getActiveProfileId, getSettings, applyFamilyLang, applyFamilyThemes,
     } from './js/store.js';
-    import { theme, cardsForTheme, FALLBACK_THEME } from './js/family-core.js';
+    import { theme, cardsForTheme } from './js/family-core.js';
+    import { applyThemeVars } from './js/theme-apply.js';
     import { collectionView } from './js/cards-core.js';
+    import { t, applyI18n } from './js/i18n.js';
 
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
     // Витрина — той темы, в которой ребёнок сегодня («Кто ты сегодня?» на входе).
-    const th = theme(sessionStorage.getItem('tidy.todayTheme') || FALLBACK_THEME);
-    document.documentElement.setAttribute('data-theme', th.id);
+    // Сами темы придумывает родитель, поэтому образ разрешается только после
+    // загрузки настроек семьи; до этого на экране пресет.
+    let th = theme(sessionStorage.getItem('tidy.todayTheme'));
+    applyThemeVars(th);
+    applyI18n();
 
     (async () => {
       const user = await initAuth();
@@ -59,6 +64,10 @@
       const fid = resolveActiveFamily(families) || getActiveFamilyId();
       const profileId = getActiveProfileId();
       if (!profileId) { location.href = 'index.html'; return; }
+      const settings = await getSettings(fid).catch(() => null);
+      applyFamilyLang(settings); applyFamilyThemes(settings); applyI18n();
+      th = theme(sessionStorage.getItem('tidy.todayTheme'));
+      applyThemeVars(th);
       $('theme-chip').textContent = `${th.currencyEmoji} ${th.label}`;
 
       const [catalog, rewards] = await Promise.all([
@@ -68,15 +77,14 @@
       const owned = cardsForTheme(rewards || {}, th.id);
       const v = collectionView(catalog, th.id, owned);
 
-      $('count').textContent = v.total ? `${v.got} из ${v.total}` : 'Карточек пока нет';
+      $('count').textContent = v.total ? t('collection.count', { got: v.got, total: v.total }) : t('collection.none');
       $('bar').style.width = `${v.total ? Math.round((v.got / v.total) * 100) : 0}%`;
-      $('hint').textContent = !v.total
-        ? 'Родители ещё не добавили карточки.'
-        : v.complete ? 'Ты собрал всё! 🎉' : 'Каждая уборка с проверкой приносит новую карточку.';
+      $('hint').textContent = t(!v.total ? 'collection.hintNone'
+        : v.complete ? 'collection.hintComplete' : 'collection.hintMore');
 
       $('grid').innerHTML = v.cards.map(c => c.owned
         ? `<div class="card slot"><img src="${esc(c.url)}" alt=""><div class="nm">${esc(c.name || '')}</div></div>`
-        : `<div class="card slot locked"><div class="shape">?</div><div class="nm">Ещё не твоя</div></div>`).join('');
+        : `<div class="card slot locked"><div class="shape">?</div><div class="nm">${esc(t('collection.locked'))}</div></div>`).join('');
     })();
   </script>
   <script src="pwa.js"></script>

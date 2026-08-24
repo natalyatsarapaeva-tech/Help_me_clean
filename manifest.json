@@ -1,7 +1,8 @@
 {
-  "name": "Наведи и убери",
-  "short_name": "Убери",
-  "description": "Приложение, которое учит ребёнка убираться: камера показывает, что убрать, и превращает это в короткие раунды.",
+  "name": "Point & Tidy",
+  "short_name": "Tidy",
+  "description": "An app that teaches a child to tidy up: the camera shows what to put away and turns it into short rounds.",
+  "lang": "en",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",

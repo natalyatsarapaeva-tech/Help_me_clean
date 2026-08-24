@@ -18,6 +18,7 @@ import {
   zoneKind, normalizeZoneKind, SPARKLES, normalizeRewards, nextSurpriseIn, shouldSurprise,
   SEEN_TAGS, normalizeTags,
 } from './family-core.js';
+import { t } from './i18n.js';
 
 // ── Порядок цветов в раунде (режим A) ───────────────────────────────────────
 // Порядок фиксирован и одинаков в каждом раунде: ребёнок запоминает ритуал
@@ -147,9 +148,9 @@ function planZones(rawZones) {
     .slice(0, MAX_WIPES)
     .map((z, i) => ({
       id: 1000 + i, kind: 'wipe',
-      label: z.label || 'поверхность',
+      label: z.label || t('zone.fallbackLabel'),
       category: null, point: z.point, itemsEstimate: 0, needsCloseup: false,
-      action: `протри ${(z.label || 'поверхность').toLowerCase()}`,
+      action: t('zone.wipeAction', { label: (z.label || t('zone.fallbackLabel')).toLowerCase() }),
     }));
   if (!wipes.length) return ordered;
   const at = ordered.findIndex(z => zoneOrderIndex(z.kind) >= zoneOrderIndex('wipe'));
@@ -268,7 +269,7 @@ export function stepTask(round) {
     // В обходе заголовок — сам очаг («одежда на стуле»), на столе его нет.
     title: overview ? (first.label || zone?.name || '') : '',
     instruction: overview
-      ? (first.action || cat?.instruction || zone?.instruction || 'Убери здесь')
+      ? (first.action || cat?.instruction || zone?.instruction || t('zone.tidyHere'))
       : cat.instruction,
     target: cat?.target || zone?.target || '',
     point: overview ? (first.point || null) : null,
@@ -459,7 +460,7 @@ export function roundTaskText(round) {
       return zone?.action || zone?.label || zoneKind(s.kind || zone?.kind).plan;
     })
     .filter(Boolean))];
-  return done.join('; ') || (overview ? 'убрать комнату' : 'убрать поверхность');
+  return done.join('; ') || t(overview ? 'round.taskRoom' : 'round.taskSurface');
 }
 
 // ── Финал раунда: проверка «после» ──────────────────────────────────────────

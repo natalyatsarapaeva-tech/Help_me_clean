@@ -11,6 +11,12 @@ import {
   dropItem, isItemDropped, isStepEmpty, roundContextTags,
 } from '../js/round-core.js';
 import { ACTION_IDS, SPARKLES, ZONE_IDS, emptyRewards, sanitizeScan } from '../js/family-core.js';
+import { setLang } from '../js/i18n.js';
+
+// Фикстуры ниже — русские ответы сканера, и подписи шагов ядро берёт из словаря
+// (js/i18n.js). Фиксируем язык, чтобы тест проверял сборку раунда, а не то, на
+// каком языке открылось приложение.
+setLang('ru');
 
 // Сырой ответ сканера: три категории вперемешку, порядок «как увидела модель».
 const RAW_SCAN = {
@@ -24,7 +30,7 @@ const RAW_SCAN = {
 };
 const fixed = (t = 1000) => () => t;
 const round0 = () => buildRound(sanitizeScan(RAW_SCAN), {
-  roomId: 'kitchen', roomName: 'Кухня', themeId: 'minion', profileId: 'kid1',
+  roomId: 'kitchen', roomName: 'Кухня', themeId: 'sunny', profileId: 'kid1',
   now: fixed(0), rand: () => 0, // surpriseIn = 2 (min)
 });
 
@@ -204,7 +210,7 @@ const RAW_ROUTE = {
   estimated_minutes: 6,
 };
 const route0 = () => buildRound(sanitizeScan(RAW_ROUTE), {
-  roomId: 'maya', roomName: 'Комната Майи', themeId: 'jedi', profileId: 'kid1',
+  roomId: 'maya', roomName: 'Комната Майи', themeId: 'starry', profileId: 'kid1',
   now: fixed(0), rand: () => 0,
 });
 
@@ -319,7 +325,7 @@ const RAW_ROOM = {
   ],
 };
 const room0 = () => buildRound(sanitizeScan(RAW_ROOM), {
-  roomId: 'maya', roomName: 'Комната Майи', themeId: 'jedi', profileId: 'kid1',
+  roomId: 'maya', roomName: 'Комната Майи', themeId: 'starry', profileId: 'kid1',
   now: fixed(0), rand: () => 0,
 });
 

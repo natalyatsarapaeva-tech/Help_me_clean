@@ -13,6 +13,7 @@
 // руку» превратилось бы в способ получать искорки вместо уборки.
 import { normalizeRewards, SPARKLES, SEEN_TAGS, CLEANED_TAGS, normalizeTags } from './family-core.js';
 import { dayKey } from './limits-core.js';
+import { t } from './i18n.js';
 
 export const BONUS_DAILY_LIMIT = 2; // сколько бонусов в день приносят искорки
 
@@ -26,59 +27,48 @@ export const BONUS_DAILY_LIMIT = 2; // сколько бонусов в день
 //   нужны все. Нет ни одного подходящего задания — не предлагаем ничего:
 //   пустая пауза лучше задания невпопад.
 // check — что именно должно быть видно на фото (уходит в промпт проверки).
+// title/hint/check — тексты, и живут в словаре по ключам bonus.<id>.*:
+//   title — что сделать, hint — что именно сфотографировать,
+//   check  — что должно быть видно на фото (уходит в промпт проверки).
 export const BONUS_TASKS = [
   {
     id: 'dust', emoji: '🧽', sparkles: 3, roomTypes: null,
     // not: стол, который в маршруте уже протирали шагом «протереть», второй раз
     // тряпочкой просить нелепо — ребёнок только что это и сделал.
     needs: { cleaned: ['surface'], not: ['wiped'] },
-    title: 'Вытри пыль тряпочкой',
-    hint: 'Протри стол или полку — и сфоткай свою руку с тряпкой прямо на ней',
-    check: 'рука ребёнка с тряпкой, салфеткой или влажной губкой на столе, полке или тумбе',
   },
   {
     id: 'sweep', emoji: '🧹', sparkles: 3, roomTypes: null,
     needs: { cleaned: ['floor'] },
-    title: 'Подмети или пропылесось пол',
-    hint: 'Возьми веник или пылесос и сфоткай себя за работой',
-    check: 'ребёнок держит веник, щётку, швабру или пылесос, и видно пол — идёт уборка пола',
   },
   {
     id: 'laundry', emoji: '🧺', sparkles: 2, roomTypes: null,
     needs: { cleaned: ['textile'] },
-    title: 'Отнеси грязное в стирку',
-    hint: 'Сложи грязные вещи в корзину или стиральную машину и сфоткай',
-    check: 'детские руки кладут одежду или полотенца в корзину для белья либо в стиральную машину',
   },
   {
     id: 'plants', emoji: '🪴', sparkles: 2, roomTypes: null,
     needs: { seen: ['plant'] },
-    title: 'Полей цветок',
-    hint: 'Полей растение и сфоткай лейку или стакан у самого горшка',
-    check: 'лейка, бутылка или стакан с водой рядом с комнатным растением, вода льётся или собирается литься',
   },
   {
     id: 'mirror', emoji: '🪞', sparkles: 3, roomTypes: ['bathroom'],
     needs: { seen: ['mirror'] },
-    title: 'Протри зеркало или кран до блеска',
-    hint: 'Протри зеркало или кран и сфоткай руку с тряпкой на нём',
-    check: 'рука с тряпкой или салфеткой на зеркале, кране или раковине',
   },
   {
     id: 'shoes', emoji: '👟', sparkles: 2, roomTypes: ['hall'],
     needs: { seen: ['shoes'] },
-    title: 'Поставь обувь ровным рядом',
-    hint: 'Выстрой обувь в ряд и сфоткай сверху',
-    check: 'обувь стоит аккуратным ровным рядом или парами, носками в одну сторону',
   },
   {
     id: 'books', emoji: '📚', sparkles: 2, roomTypes: ['bedroom_child', 'living'],
     needs: { seen: ['books'] },
-    title: 'Выровняй книги на полке',
-    hint: 'Поставь книги ровно, корешками наружу — и сфоткай полку',
-    check: 'книги на полке стоят ровно, корешками наружу, без завалов и стопок поперёк',
   },
-];
+].map(task => ({
+  ...task,
+  // Геттеры, а не поля: язык переключается без перезагрузки ядра, и задание,
+  // выбранное до переключения, должно заговорить на новом языке.
+  get title() { return t(`bonus.${this.id}.title`); },
+  get hint() { return t(`bonus.${this.id}.hint`); },
+  get check() { return t(`bonus.${this.id}.check`); },
+}));
 
 export const BONUS_BY_ID = new Map(BONUS_TASKS.map(t => [t.id, t]));
 export function bonusTask(id) { return BONUS_BY_ID.get(String(id || '')) || null; }

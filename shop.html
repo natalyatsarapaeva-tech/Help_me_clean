@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Магазин — Наведи и убери</title>
+  <title data-i18n="title.shop">Shop — Point &amp; Tidy</title>
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#3A5DA8">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -31,37 +31,37 @@
 <body>
   <div class="wrap col">
     <div class="row" style="justify-content:space-between">
-      <a class="back" href="index.html">← Назад</a>
+      <a class="back" href="index.html" data-i18n="common.back">← Back</a>
       <span class="chip" id="theme-chip">—</span>
     </div>
-    <h1>Магазин</h1>
+    <h1 data-i18n="shop.title">Shop</h1>
 
     <div class="card col">
       <div class="row" style="gap:26px">
         <div>
           <div class="balance" id="balance">0</div>
-          <div class="muted" id="balance-label">можно потратить</div>
+          <div class="muted" id="balance-label" data-i18n="shop.toSpend">to spend</div>
         </div>
         <div>
           <div class="balance" id="earned">0</div>
-          <div class="muted">заработано всего</div>
+          <div class="muted" data-i18n="shop.earnedTotal">earned in total</div>
         </div>
         <div>
           <div class="balance" id="rank">—</div>
-          <div class="muted">твой ранг</div>
+          <div class="muted" data-i18n="shop.yourRank">your rank</div>
         </div>
       </div>
-      <div class="muted" style="font-size:14px">Покупка тратит только левое число. Заработанное и ранг остаются с тобой навсегда.</div>
+      <div class="muted" style="font-size:14px" data-i18n="shop.note">A purchase only spends the left-hand number.</div>
     </div>
 
     <div class="card col waiting hidden" id="pending-box">
-      <strong>Ждёт, когда родители выдадут</strong>
+      <strong data-i18n="shop.pendingTitle">Waiting for the parents to hand it over</strong>
       <div id="pending" class="col"></div>
     </div>
 
     <p class="muted" id="goal"></p>
     <div id="grid" class="grid"></div>
-    <p class="muted hidden" id="empty">Родители ещё не придумали, на что менять искорки.</p>
+    <p class="muted hidden" id="empty" data-i18n="shop.empty">Nothing to swap sparkles for yet.</p>
 
     <div id="toast" class="toast"></div>
   </div>
@@ -70,36 +70,42 @@
     import {
       initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
       listRealRewards, getRewards, saveRewards, getActiveProfileId,
+      getSettings, applyFamilyLang, applyFamilyThemes,
     } from './js/store.js';
-    import { theme, FALLBACK_THEME, rankForCleanups } from './js/family-core.js';
+    import { theme, rankForCleanups } from './js/family-core.js';
+    import { applyThemeVars } from './js/theme-apply.js';
     import { shopView, buyReward } from './js/shop-core.js';
+    import { t, applyI18n } from './js/i18n.js';
 
     const $ = id => document.getElementById(id);
     const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     let toastTimer;
     const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2800); };
 
-    const th = theme(sessionStorage.getItem('tidy.todayTheme') || FALLBACK_THEME);
-    document.documentElement.setAttribute('data-theme', th.id);
+    // Образ (и его палитра) — тот, что ребёнок выбрал на входе; сами темы
+    // приезжают из настроек семьи, до этого рисуем пресетом.
+    let th = theme(sessionStorage.getItem('tidy.todayTheme'));
+    applyThemeVars(th);
+    applyI18n();
 
     let fid = null, profileId = null, shop = [], rewards = null;
 
     function render() {
       const v = shopView(shop, rewards);
       $('balance').textContent = v.balance;
-      $('balance-label').textContent = `${th.currencyEmoji} можно потратить`;
+      $('balance-label').textContent = t('shop.toSpendEmoji', { emoji: th.currencyEmoji });
       $('earned').textContent = v.earnedTotal;
-      $('rank').textContent = rankForCleanups(rewards?.cleanupsTotal || 0);
+      $('rank').textContent = rankForCleanups(rewards?.cleanupsTotal || 0, th.id);
 
       $('pending-box').classList.toggle('hidden', !v.pending.length);
       $('pending').innerHTML = v.pending.map(p =>
         `<div>${p.url ? `<img class="pend-pic" src="${esc(p.url)}" alt="">` : esc(p.emoji || '🎁')}
-          <strong>${esc(p.name)}</strong> <span class="muted">— куплено, ждём</span></div>`).join('');
+          <strong>${esc(p.name)}</strong> <span class="muted">${esc(t('shop.pending'))}</span></div>`).join('');
 
       $('empty').classList.toggle('hidden', !!v.items.length);
       $('goal').textContent = v.nextGoal
-        ? `Ещё ${v.nextGoal.missing} ${th.currencyEmoji} — и будет «${v.nextGoal.name}»`
-        : (v.items.length ? 'Тебе хватает на всё, что есть!' : '');
+        ? t('shop.goal', { n: v.nextGoal.missing, emoji: th.currencyEmoji, name: v.nextGoal.name })
+        : (v.items.length ? t('shop.enoughForAll') : '');
 
       $('grid').innerHTML = v.items.map(it => `
         <div class="card buy-tile ${it.affordable ? '' : 'locked'}" data-item="${esc(it.id)}">
@@ -109,9 +115,9 @@
           <div class="nm">${esc(it.name)}</div>
           <div class="chip">${th.currencyEmoji} ${it.cost}</div>
           ${it.affordable
-            ? '<button class="btn btn-primary buy">Купить</button>'
+            ? `<button class="btn btn-primary buy">${esc(t('shop.buy'))}</button>`
             : `<div class="bar"><i style="width:${Math.round((v.balance / it.cost) * 100)}%"></i></div>
-               <div class="muted">Ещё ${it.missing}</div>`}
+               <div class="muted">${esc(t('shop.missing', { n: it.missing }))}</div>`}
         </div>`).join('');
 
       $('grid').querySelectorAll('.buy').forEach(btn => {
@@ -122,18 +128,18 @@
 
     async function buy(item, btn) {
       if (!item) return;
-      if (!confirm(`Купить «${item.name}» за ${item.cost}?`)) return;
+      if (!confirm(t('shop.confirmBuy', { name: item.name, cost: item.cost }))) return;
       btn.disabled = true;
       const res = buyReward(rewards, item);
-      if (res.error) { toast(res.error === 'not-enough' ? 'Пока не хватает — убери ещё' : 'Не получилось'); btn.disabled = false; return; }
+      if (res.error) { toast(t(res.error === 'not-enough' ? 'shop.notEnough' : 'shop.buyFailed')); btn.disabled = false; return; }
       try {
         await saveRewards(fid, profileId, res.rewards);
         rewards = res.rewards;
         render();
-        toast(`«${item.name}» куплено! Покажи родителям.`);
+        toast(t('shop.bought', { name: item.name }));
       } catch (e) {
         console.error(e);
-        toast('Не удалось записать покупку — проверь связь');
+        toast(t('shop.saveFailed'));
         btn.disabled = false;
       }
     }
@@ -145,6 +151,10 @@
       fid = resolveActiveFamily(families) || getActiveFamilyId();
       profileId = getActiveProfileId();
       if (!profileId) { location.href = 'index.html'; return; }
+      const settings = await getSettings(fid).catch(() => null);
+      applyFamilyLang(settings); applyFamilyThemes(settings); applyI18n();
+      th = theme(sessionStorage.getItem('tidy.todayTheme'));
+      applyThemeVars(th);
       $('theme-chip').textContent = `${th.currencyEmoji} ${th.label}`;
       const [list, r] = await Promise.all([
         listRealRewards(fid).catch(() => []),
