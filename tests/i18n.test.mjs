@@ -11,10 +11,11 @@ import {
   t, tList, getLang, setLang, normalizeLang, adoptFamilyLang, onLangChange,
 } from '../js/i18n.js';
 import {
-  actionCategory, ACTION_IDS, zoneKind, ZONE_IDS, theme, THEME_IDS,
+  actionCategory, ACTION_IDS, zoneKind, ZONE_IDS, theme, themeIds,
   ROOM_TYPES, roomTypeLabel, rankForCleanups, tidyStandard, verifyLimitsText,
   missedPhrase,
 } from '../js/family-core.js';
+import { PALETTE_IDS, paletteLabel } from '../js/themes-core.js';
 import { BONUS_TASKS } from '../js/bonus-core.js';
 
 const restore = (fn) => { const was = getLang(); try { return fn(); } finally { setLang(was); } };
@@ -130,13 +131,24 @@ test('у каждого вида очага есть название и стр�
 test('образы, ранги и типы комнат подписаны в каждом языке', () => restore(() => {
   for (const lang of LANGS) {
     setLang(lang);
-    for (const id of THEME_IDS) {
+    for (const id of themeIds()) {
       const th = theme(id);
       assert.ok(th.label && th.currencyName && th.praiseWord, `${lang}/${id}`);
       assert.ok(th.currencyEmoji, `${lang}/${id}: эмодзи валюты вне языка`);
     }
     for (const rt of ROOM_TYPES) assert.ok(roomTypeLabel(rt).length > 2, `${lang}/${rt}`);
     for (const n of [0, 8, 25, 60]) assert.ok(rankForCleanups(n).length > 2, `${lang}/${n}`);
+  }
+}));
+
+test('двенадцать цветов палитры названы в каждом языке', () => restore(() => {
+  // Цвет выбирают на слух («давай оранжевую тему»), а не пипеткой: без подписи
+  // палитра — это ряд квадратиков, о которых не договориться.
+  for (const lang of LANGS) {
+    setLang(lang);
+    const labels = PALETTE_IDS.map(paletteLabel);
+    for (const [i, label] of labels.entries()) assert.ok(label.length > 2, `${lang}/${PALETTE_IDS[i]}`);
+    assert.equal(new Set(labels).size, labels.length, `${lang}: два цвета названы одинаково`);
   }
 }));
 
@@ -153,9 +165,9 @@ test('бонусные задания переведены целиком', () =
 
 test('переключение языка меняет подписи, id остаются прежними', () => restore(() => {
   setLang('en');
-  const en = { action: actionCategory('trash').instruction, rank: rankForCleanups(30), theme: theme('jedi').label };
+  const en = { action: actionCategory('trash').instruction, rank: rankForCleanups(30), theme: theme('starry').label };
   setLang('ru');
-  const ru = { action: actionCategory('trash').instruction, rank: rankForCleanups(30), theme: theme('jedi').label };
+  const ru = { action: actionCategory('trash').instruction, rank: rankForCleanups(30), theme: theme('starry').label };
   for (const key of Object.keys(en)) assert.notEqual(en[key], ru[key], key);
   assert.equal(actionCategory('trash').id, 'trash', 'id — данные, они не переводятся');
 }));

@@ -113,7 +113,7 @@
         <a class="btn btn-ghost" href="home.html" data-i18n="parent.nav.home">🏠 Home</a>
         <a class="btn btn-ghost" href="children.html" data-i18n="parent.nav.children">🧒 Children</a>
         <a class="btn btn-ghost" href="reference.html" data-i18n="parent.nav.reference">📸 Reference shots</a>
-        <a class="btn btn-ghost" href="cards.html" data-i18n="parent.nav.cards">🃏 Cards</a>
+        <a class="btn btn-ghost" href="themes.html" data-i18n="parent.nav.themes">🎨 Themes and collections</a>
         <a class="btn btn-ghost" href="rewards.html" data-i18n="parent.nav.rewards">🎁 Rewards</a>
       </div>
 
@@ -156,8 +156,10 @@
       getActiveProfileId, setActiveProfileId, clearActiveProfileId, resolveActiveProfile,
       isParentUnlocked, unlockParentArea, lockParentArea, setParentPin,
       getSettings, rememberChildTheme, getRewards, setFamilyLang, applyFamilyLang,
+      applyFamilyThemes,
     } from './js/store.js';
-    import { theme, THEME_IDS, cardsForTheme, rankForCleanups } from './js/family-core.js';
+    import { theme, themeIds, cardsForTheme, rankForCleanups } from './js/family-core.js';
+    import { applyThemeVars } from './js/theme-apply.js';
     import { normalizeProfiles, findProfile, isLocked, parentLock, parentAreaLocked } from './js/profile-core.js';
     import { verifyPin, isValidPin } from './js/pin.js';
     import { t, getLang, setLang, applyI18n, renderLangSwitch } from './js/i18n.js';
@@ -323,12 +325,14 @@
     }
 
     // ── Тема сегодняшнего дня ──
+    // Палитру ставим переменными на <html>: тем у семьи до четырёх и цвета у них
+    // свои, заранее написать под них CSS нельзя (см. js/theme-apply.js).
     function applyTheme(themeId) {
-      document.documentElement.setAttribute('data-theme', themeId);
+      applyThemeVars(theme(themeId));
       sessionStorage.setItem(THEME_KEY, themeId);
     }
     function renderWhoChoices() {
-      $('who-choices').innerHTML = THEME_IDS.map(id => {
+      $('who-choices').innerHTML = themeIds().map(id => {
         const th = theme(id);
         return `<button class="avatar-btn" data-theme-pick="${id}">
           ${th.currencyEmoji}<span class="name">${esc(th.label)}</span>
@@ -357,7 +361,7 @@
         $('child-stats').textContent = t('child.stats', {
           emoji: th.currencyEmoji, currency: rewards.currency, earned: rewards.earnedTotal,
           theme: th.label, cards: cards.length,
-          cleanups: rewards.cleanupsTotal, rank: rankForCleanups(rewards.cleanupsTotal),
+          cleanups: rewards.cleanupsTotal, rank: rankForCleanups(rewards.cleanupsTotal, th.id),
         });
       } catch (e) { console.warn(e); $('child-stats').textContent = t('child.statsFailed'); }
     }
@@ -383,6 +387,9 @@
       settings = await getSettings(fid).catch(() => null);
       // Второй планшет, на котором язык ещё не выбирали, открывается на языке семьи.
       applyFamilyLang(settings);
+      // Темы семьи — до профилей: в профиле лежит lastTheme, и он должен
+      // сойтись с темой, которая у семьи есть сейчас.
+      applyFamilyThemes(settings);
       applyI18n();
       profiles = normalizeProfiles(await listProfiles(fid).catch(() => []));
 

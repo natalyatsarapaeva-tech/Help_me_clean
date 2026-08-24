@@ -70,8 +70,10 @@
     import {
       initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
       listRealRewards, getRewards, saveRewards, getActiveProfileId,
+      getSettings, applyFamilyLang, applyFamilyThemes,
     } from './js/store.js';
-    import { theme, FALLBACK_THEME, rankForCleanups } from './js/family-core.js';
+    import { theme, rankForCleanups } from './js/family-core.js';
+    import { applyThemeVars } from './js/theme-apply.js';
     import { shopView, buyReward } from './js/shop-core.js';
     import { t, applyI18n } from './js/i18n.js';
 
@@ -80,8 +82,10 @@
     let toastTimer;
     const toast = (m) => { const t = $('toast'); t.textContent = m; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 2800); };
 
-    const th = theme(sessionStorage.getItem('tidy.todayTheme') || FALLBACK_THEME);
-    document.documentElement.setAttribute('data-theme', th.id);
+    // Образ (и его палитра) — тот, что ребёнок выбрал на входе; сами темы
+    // приезжают из настроек семьи, до этого рисуем пресетом.
+    let th = theme(sessionStorage.getItem('tidy.todayTheme'));
+    applyThemeVars(th);
     applyI18n();
 
     let fid = null, profileId = null, shop = [], rewards = null;
@@ -91,7 +95,7 @@
       $('balance').textContent = v.balance;
       $('balance-label').textContent = t('shop.toSpendEmoji', { emoji: th.currencyEmoji });
       $('earned').textContent = v.earnedTotal;
-      $('rank').textContent = rankForCleanups(rewards?.cleanupsTotal || 0);
+      $('rank').textContent = rankForCleanups(rewards?.cleanupsTotal || 0, th.id);
 
       $('pending-box').classList.toggle('hidden', !v.pending.length);
       $('pending').innerHTML = v.pending.map(p =>
@@ -147,6 +151,10 @@
       fid = resolveActiveFamily(families) || getActiveFamilyId();
       profileId = getActiveProfileId();
       if (!profileId) { location.href = 'index.html'; return; }
+      const settings = await getSettings(fid).catch(() => null);
+      applyFamilyLang(settings); applyFamilyThemes(settings); applyI18n();
+      th = theme(sessionStorage.getItem('tidy.todayTheme'));
+      applyThemeVars(th);
       $('theme-chip').textContent = `${th.currencyEmoji} ${th.label}`;
       const [list, r] = await Promise.all([
         listRealRewards(fid).catch(() => []),

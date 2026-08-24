@@ -9,6 +9,7 @@
 //   families/{fid}/profiles/{pid}/progress/{sessionId}
 //   families/{fid}/profiles/{pid}/rewards/current
 //   families/{fid}/reference/{surfaceId}, /cards/{cardId}, /home/*, /settings/*
+//   families/{fid}/settings/app    — язык, темы семьи, PIN родителя, проверка по фото
 import {
   db, doc, getDoc, setDoc, collection, getDocs, query, where,
   auth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
@@ -20,8 +21,9 @@ import {
 export { projectId };
 import {
   makeFamilyId, makeJoinCode, normalizeJoinCode, pickActiveFamily,
-  PARENT, normalizeTheme, normalizeRewards, emptyRewards,
+  PARENT, normalizeTheme, normalizeRewards, emptyRewards, setFamilyThemes,
 } from './family-core.js';
+import { normalizeThemes, defaultThemes } from './themes-core.js';
 import { makeProfileId, normalizeProfiles, pickActiveProfile } from './profile-core.js';
 import { hashPin } from './pin.js';
 import { t, getLang, normalizeLang, adoptFamilyLang } from './i18n.js';
@@ -147,7 +149,10 @@ export async function createFamily(name) {
   await at('membership', `families/${fid}/members/${uid}`, setDoc(doc(db, 'families', fid, 'members', uid), { role: PARENT, addedBy: uid, joinedAt: now }));
   await at('index', `users/${uid}/families/${fid}`, setDoc(doc(db, 'users', uid, 'families', fid), { role: PARENT, name: name || t('parent.defaultFamily'), joinedAt: now }));
   await at('settings', `families/${fid}/settings/app`, setDoc(doc(db, 'families', fid, 'settings', 'app'), {
-    playlists: { minion: '', jedi: '' }, dailyBudget: null, lang: getLang(),
+    // Темы-пресеты кладём сразу: родителю есть что переименовать под интересы
+    // ребёнка, а ребёнку есть из чего выбрать образ до первой настройки.
+    themes: defaultThemes(), photoCheckRequired: true,
+    playlists: {}, dailyBudget: null, lang: getLang(),
   }));
   setActiveFamilyId(fid);
   return fid;
@@ -417,6 +422,34 @@ export async function setFamilyLang(fid, lang) {
 }
 // Подхватить язык семьи, если на этом устройстве выбора ещё не делали.
 export function applyFamilyLang(settings) { return adoptFamilyLang(settings?.lang); }
+
+// ── Темы семьи (§43) ────────────────────────────────────────────────────────
+// Темы придумывает родитель (themes.html) и лежат они рядом с остальными
+// настройками. Экран, которому нужны образы, зовёт applyFamilyThemes(settings)
+// сразу после getSettings — дальше family-core отвечает на theme(id) темами
+// ЭТОЙ семьи, а не пресетами.
+export function applyFamilyThemes(settings) { return setFamilyThemes(settings?.themes); }
+export async function loadFamilyThemes(fid) {
+  const settings = await getSettings(fid).catch(() => null);
+  applyFamilyThemes(settings);
+  return settings;
+}
+// Пишем ВЕСЬ список разом: тем максимум четыре, порядок в нём значим (это
+// порядок кнопок на экране «Кто ты сегодня?»), а поэлементная запись в массив
+// Firestore этого порядка не гарантирует.
+export async function saveFamilyThemes(fid, themes) {
+  const list = normalizeThemes(themes);
+  await setDoc(doc(db, 'families', fid, 'settings', 'app'), { themes: list }, { merge: true });
+  setFamilyThemes(list);
+  return list;
+}
+
+// Обязательность проверки по фото — настройка семьи, переключается в разделе
+// эталонов (reference.html), читается раундом (scan.html).
+export async function setPhotoCheckRequired(fid, required) {
+  await setDoc(doc(db, 'families', fid, 'settings', 'app'), { photoCheckRequired: !!required }, { merge: true });
+  return !!required;
+}
 
 export async function saveSettings(fid, settings) {
   await setDoc(doc(db, 'families', fid, 'settings', 'app'), settings, { merge: true });

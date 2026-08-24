@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title data-i18n="title.themes">Themes and collections — Point &amp; Tidy</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#3A5DA8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .back { text-decoration: none; color: var(--muted); font-weight: 800; }
+    .step { display: none; }
+    .step.on { display: block; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 16px; }
+    .themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+    .theme-tile { display: flex; flex-direction: column; gap: 10px; }
+    .theme-tile .top { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 800; }
+    .theme-tile .top .em { font-size: 30px; }
+    /* Три цвета темы — полосой: родитель узнаёт свою тему по палитре быстрее,
+       чем по названию. */
+    .swatches { display: flex; gap: 8px; }
+    .swatch { width: 34px; height: 34px; border-radius: 10px; border: 2px solid rgba(0,0,0,.12); }
+    .theme-tile .btn { min-height: 48px; padding: 0 14px; font-size: 16px; }
+    .card-tile { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .card-tile img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 12px; background: var(--line); }
+    .card-tile .nm { font-weight: 800; line-height: 1.2; }
+    .card-tile .btn { min-height: 44px; padding: 0 12px; font-size: 15px; }
+    .frame { position: relative; border-radius: var(--radius); overflow: hidden; background: #000; line-height: 0; max-width: 720px; }
+    .frame video, .frame img { display: block; width: 100%; max-height: 56vh; object-fit: contain; background: #000; }
+    .shutter { position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); width: 84px; height: 84px;
+      border-radius: 50%; border: 6px solid #fff; background: rgba(255,255,255,.28); cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+    .theme-pick { display: flex; gap: 10px; flex-wrap: wrap; }
+    .theme-pick .btn.on { outline: 4px solid var(--accent); }
+    /* Выбор цвета: сам цвет и есть кнопка — подпись под ней для тех, кто цвет
+       не различает. */
+    .colors { display: flex; gap: 10px; flex-wrap: wrap; }
+    .color-btn { width: 62px; padding: 0; border: 3px solid transparent; border-radius: 14px; background: none; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; gap: 4px; font: inherit; font-size: 12px; font-weight: 700; color: var(--muted); }
+    .color-btn i { display: block; width: 100%; height: 44px; border-radius: 12px; border: 2px solid rgba(0,0,0,.12); }
+    .color-btn.on { border-color: var(--ink); color: var(--ink); }
+    .emoji-pick { display: flex; gap: 8px; flex-wrap: wrap; }
+    .emoji-btn { width: 56px; height: 56px; border-radius: 14px; border: 3px solid var(--line); background: var(--bg); font-size: 26px; cursor: pointer; }
+    .emoji-btn.on { border-color: var(--ink); }
+    .ranks { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+    /* Предпросмотр красится переменными темы прямо на контейнере — то же, что
+       js/theme-apply.js делает со всей страницей у ребёнка. */
+    .preview { border-radius: var(--radius); padding: 18px; display: flex; flex-direction: column; gap: 12px;
+      background: var(--bg); color: var(--ink); border: 2px solid var(--line); }
+    .preview .p-btn { min-height: 56px; border-radius: var(--radius); border: none; font: inherit; font-weight: 800; font-size: 20px;
+      background: var(--primary); color: var(--primary-ink); box-shadow: 0 0 0 2px var(--secondary) inset; }
+    .preview .p-bar { height: 12px; border-radius: 999px; background: var(--line); overflow: hidden; }
+    .preview .p-bar > i { display: block; height: 100%; width: 62%; background: var(--accent); }
+    .preview .p-chip { align-self: flex-start; padding: 6px 12px; border-radius: 999px; background: var(--card);
+      border: 1px solid var(--line); font-weight: 700; font-size: 14px; }
+    @media (max-width: 620px) { .theme-tile .btn { flex: 1; } }
+  </style>
+</head>
+<body>
+  <div class="wrap col">
+    <a class="back" href="index.html" data-i18n="common.back">← Back</a>
+    <h1 data-i18n="themes.title">Themes and collections</h1>
+
+    <!-- Список тем семьи + общие карточки. -->
+    <section id="step-list" class="step on col">
+      <p class="muted" data-i18n="themes.intro"></p>
+      <div class="row">
+        <span class="chip" id="themes-count">—</span>
+        <button class="btn btn-primary" id="btn-add-theme" style="margin-left:auto" data-i18n="themes.add">+ New theme</button>
+      </div>
+      <div class="muted" style="font-size:14px" data-i18n="themes.limitHint"></div>
+      <div id="themes" class="themes"></div>
+
+      <div class="card col" style="margin-top:8px">
+        <strong data-i18n="cards.forBoth">🎲 For every theme</strong>
+        <div class="muted" style="font-size:14px" data-i18n="cards.intro"></div>
+        <div class="row">
+          <span class="chip" id="any-count">—</span>
+          <button class="btn btn-ghost" id="btn-add-any" style="margin-left:auto" data-i18n="cards.add">+ Add a card</button>
+        </div>
+        <div id="any-grid" class="grid"></div>
+      </div>
+    </section>
+
+    <!-- Правка одной темы: имя, значок, палитра, ранги, карточки. -->
+    <section id="step-edit" class="step col">
+      <h1 id="edit-title" data-i18n="themes.editTitle">Theme</h1>
+
+      <div class="card col">
+        <strong data-i18n="themes.name">Theme name</strong>
+        <input id="theme-name" class="field" data-i18n-placeholder="themes.namePlaceholder" placeholder="" maxlength="24">
+        <strong data-i18n="themes.emoji">Its sparkle</strong>
+        <div class="muted" style="font-size:14px" data-i18n="themes.emojiHint"></div>
+        <div class="emoji-pick" id="emoji-pick"></div>
+      </div>
+
+      <div class="card col">
+        <strong data-i18n="themes.palette">Interface palette</strong>
+        <div class="muted" style="font-size:14px" data-i18n="themes.paletteHint"></div>
+        <div id="palette-rows" class="col"></div>
+      </div>
+
+      <div class="card col">
+        <strong data-i18n="themes.ranks">Rank names</strong>
+        <div class="muted" style="font-size:14px" data-i18n="themes.ranksHint"></div>
+        <div class="ranks" id="ranks"></div>
+      </div>
+
+      <div class="card col">
+        <strong data-i18n="themes.preview">How it will look</strong>
+        <div class="preview" id="preview-box">
+          <span class="p-chip" id="preview-chip">—</span>
+          <button class="p-btn" type="button" id="preview-btn" data-i18n="themes.previewButton">Tidy up!</button>
+          <div class="p-bar"><i></i></div>
+          <span class="muted" id="preview-rank">—</span>
+        </div>
+      </div>
+
+      <div class="card col">
+        <strong data-i18n="themes.cards">Cards of this theme</strong>
+        <div class="muted" style="font-size:14px" data-i18n="themes.cardsHint"></div>
+        <div class="row">
+          <span class="chip" id="theme-cards-count">—</span>
+          <button class="btn btn-ghost" id="btn-add-card" style="margin-left:auto" data-i18n="cards.add">+ Add a card</button>
+        </div>
+        <p class="muted hidden" id="cards-need-save" data-i18n="themes.saveFirst"></p>
+        <p class="muted hidden" id="theme-cards-empty" data-i18n="themes.cardsEmpty"></p>
+        <div id="theme-grid" class="grid"></div>
+      </div>
+
+      <div class="row">
+        <button class="btn btn-primary" id="btn-save-theme" data-i18n="themes.save">Save the theme</button>
+        <button class="btn btn-ghost" id="btn-cancel-theme" data-i18n="common.backToList">← Back to list</button>
+        <button class="btn btn-ghost" id="btn-delete-theme" style="margin-left:auto" data-i18n="themes.delete">Delete the theme</button>
+      </div>
+    </section>
+
+    <!-- Съёмка / выбор файла карточки. -->
+    <section id="step-shoot" class="step col">
+      <h1 data-i18n="cards.newTitle">New card</h1>
+      <p class="muted" data-i18n="cards.newHint">Photograph the sticker or the drawing.</p>
+      <div class="frame" id="frame">
+        <video id="video" playsinline muted></video>
+        <button class="shutter" id="btn-shot" data-i18n-aria-label="cards.shoot" aria-label="Take a photo"></button>
+      </div>
+      <div class="row">
+        <label class="btn btn-ghost" style="max-width:320px">
+          <span data-i18n="cards.pickFile">🖼 Choose a file</span>
+          <input id="file-input" type="file" accept="image/*" hidden>
+        </label>
+        <span class="muted" id="cam-error"></span>
+      </div>
+      <button class="btn btn-ghost" id="btn-cancel-shot" style="max-width:240px" data-i18n="common.back">← Back</button>
+    </section>
+
+    <!-- Подпись карточки и тема, в которой она выпадает. -->
+    <section id="step-meta" class="step col">
+      <h1 data-i18n="cards.metaTitle">What is it called?</h1>
+      <div class="row" style="align-items:flex-start">
+        <div class="frame" style="max-width:280px"><img id="preview-card" alt=""></div>
+        <div class="col" style="flex:1;min-width:260px">
+          <input id="card-name" class="field" data-i18n-placeholder="cards.namePlaceholder" placeholder="" maxlength="40">
+          <div class="muted" data-i18n="cards.whichTheme">Which theme does it drop in?</div>
+          <div class="theme-pick" id="card-theme-pick"></div>
+          <div class="row">
+            <button class="btn btn-primary" id="btn-save-card" data-i18n="common.save">Save</button>
+            <button class="btn btn-ghost" id="btn-retake" data-i18n="cards.anotherPhoto">Another photo</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div id="toast" class="toast"></div>
+  </div>
+
+  <script type="module">
+    import {
+      initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
+      listCards, saveCard, deleteCard, getSettings, isParentUnlocked,
+      applyFamilyLang, applyFamilyThemes, saveFamilyThemes,
+    } from './js/store.js';
+    import { parentAreaLocked } from './js/profile-core.js';
+    import { startCamera, stopCamera, cameraErrorText } from './js/camera.js';
+    import { compressCard } from './js/image.js';
+    import { familyThemes, RANK_THRESHOLDS } from './js/family-core.js';
+    import {
+      PALETTE, COLOR_ROLES, THEME_EMOJI, MAX_THEMES, RANK_COUNT,
+      paletteHex, paletteLabel, themeCssVars, resolveTheme, themeRanks,
+      draftTheme, addTheme, updateTheme, removeTheme, canAddTheme,
+    } from './js/themes-core.js';
+    import { CARD_ANY, normalizeCatalog, catalogSummary, makeCardId } from './js/cards-core.js';
+    import { t, applyI18n } from './js/i18n.js';
+
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const STEPS = ['step-list', 'step-edit', 'step-shoot', 'step-meta'];
+    const show = id => STEPS.forEach(s => $(s).classList.toggle('on', s === id));
+    let toastTimer;
+    const toast = (m) => { const el = $('toast'); el.textContent = m; el.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), 2600); };
+    applyI18n();
+
+    // themes — документы тем семьи (их правим), cards — каталог карточек,
+    // draft — тема, открытая в редакторе (копия, а не ссылка: «Назад к списку»
+    // должно означать «ничего не менял»).
+    let fid = null, themes = [], cards = [], draft = null, isNew = false;
+    let shot = null, cardTheme = CARD_ANY;
+
+    // ── Список тем ──
+    function renderList() {
+      const summary = catalogSummary(cards);
+      $('themes-count').textContent = t('themes.count', { n: themes.length, max: MAX_THEMES });
+      $('btn-add-theme').disabled = !canAddTheme(themes);
+      $('themes').innerHTML = themes.map(doc => {
+        const th = resolveTheme(doc);
+        return `
+        <div class="card theme-tile" data-theme="${esc(doc.id)}">
+          <div class="top"><span class="em">${esc(th.currencyEmoji)}</span> ${esc(th.label)}</div>
+          <div class="swatches">${COLOR_ROLES.map(role =>
+            `<span class="swatch" style="background:${esc(paletteHex(doc.colors[role]))}" title="${esc(paletteLabel(doc.colors[role]))}"></span>`).join('')}</div>
+          <div class="muted" style="font-size:14px">${esc(th.ranks.join(' · '))}</div>
+          <div class="muted" style="font-size:14px">${esc(t('cards.forTheme', { n: summary.byTheme[doc.id] || 0 }))}</div>
+          <div class="row">
+            <button class="btn btn-primary edit">${esc(t('themes.edit'))}</button>
+            <button class="btn btn-ghost drop">${esc(t('common.delete'))}</button>
+          </div>
+        </div>`;
+      }).join('');
+      $('themes').querySelectorAll('[data-theme]').forEach(el => {
+        const doc = themes.find(x => x.id === el.dataset.theme);
+        el.querySelector('.edit').onclick = () => openEditor(doc);
+        el.querySelector('.drop').onclick = () => dropTheme(doc);
+      });
+
+      $('any-count').textContent = t('cards.forTheme', { n: summary.byTheme[CARD_ANY] || 0 });
+      renderCardGrid($('any-grid'), CARD_ANY);
+    }
+
+    function renderCardGrid(box, themeId) {
+      const list = normalizeCatalog(cards).filter(c => c.theme === themeId);
+      box.innerHTML = list.map(c => `
+        <div class="card card-tile" data-card="${esc(c.id)}">
+          <img src="${esc(c.url)}" alt="">
+          <div class="nm">${esc(c.name || t('cards.unnamed'))}</div>
+          <button class="btn btn-ghost drop">${esc(t('common.delete'))}</button>
+        </div>`).join('');
+      box.querySelectorAll('[data-card]').forEach(el => {
+        el.querySelector('.drop').onclick = async () => {
+          if (!confirm(t('cards.confirmDelete'))) return;
+          try {
+            await deleteCard(fid, el.dataset.card);
+            cards = cards.filter(c => c.id !== el.dataset.card);
+            if (draft?.id) renderEditorCards();
+            renderList();
+            toast(t('cards.deleted'));
+          } catch (e) { console.error(e); toast(t('cards.deleteFailed')); }
+        };
+      });
+    }
+
+    async function dropTheme(doc) {
+      const label = resolveTheme(doc).label;
+      const res = removeTheme(themes, doc.id);
+      if (res.error) { toast(t(`themes.err.${res.error}`)); return; }
+      if (!confirm(t('themes.confirmDelete', { name: label }))) return;
+      try {
+        themes = await saveFamilyThemes(fid, res.themes);
+        renderList();
+        toast(t('themes.deleted'));
+      } catch (e) { console.error(e); toast(t('themes.saveFailed')); }
+    }
+
+    // ── Редактор темы ──
+    function openEditor(doc) {
+      isNew = !doc;
+      draft = doc
+        ? { ...doc, colors: { ...doc.colors }, ranks: [...doc.ranks] }
+        : draftTheme(themes);
+      $('edit-title').textContent = t(isNew ? 'themes.newTitle' : 'themes.editTitle');
+      // Пресетное имя показываем в поле: родитель правит то, что видит ребёнок,
+      // а не пустую строку, из которой непонятно, как тема называется сейчас.
+      $('theme-name').value = draft.name || (draft.preset ? resolveTheme(draft).label : '');
+      $('btn-delete-theme').classList.toggle('hidden', isNew || themes.length <= 1);
+      renderEmojiPick();
+      renderPalette();
+      renderRanks();
+      renderPreview();
+      renderEditorCards();
+      show('step-edit');
+      $('theme-name').focus();
+    }
+
+    function renderEmojiPick() {
+      const list = THEME_EMOJI.includes(draft.emoji) ? THEME_EMOJI : [draft.emoji, ...THEME_EMOJI];
+      $('emoji-pick').innerHTML = list.map(e =>
+        `<button type="button" class="emoji-btn ${e === draft.emoji ? 'on' : ''}" data-emoji="${esc(e)}">${esc(e)}</button>`).join('');
+      $('emoji-pick').querySelectorAll('[data-emoji]').forEach(el => {
+        el.onclick = () => { draft.emoji = el.dataset.emoji; renderEmojiPick(); renderPreview(); };
+      });
+    }
+
+    function renderPalette() {
+      $('palette-rows').innerHTML = COLOR_ROLES.map(role => `
+        <div class="col" style="gap:6px" data-role="${role}">
+          <strong style="font-size:16px">${esc(t(`themes.role.${role}`))}</strong>
+          <div class="colors">
+            ${PALETTE.map(c => `
+              <button type="button" class="color-btn ${c.id === draft.colors[role] ? 'on' : ''}" data-color="${esc(c.id)}"
+                      aria-label="${esc(paletteLabel(c.id))}">
+                <i style="background:${esc(c.hex)}"></i>${esc(paletteLabel(c.id))}
+              </button>`).join('')}
+          </div>
+        </div>`).join('');
+      $('palette-rows').querySelectorAll('[data-role]').forEach(row => {
+        row.querySelectorAll('[data-color]').forEach(el => {
+          el.onclick = () => { draft.colors[row.dataset.role] = el.dataset.color; renderPalette(); renderPreview(); };
+        });
+      });
+    }
+
+    function renderRanks() {
+      $('ranks').innerHTML = Array.from({ length: RANK_COUNT }, (_, i) => `
+        <div class="col" style="gap:6px">
+          <span class="muted" style="font-size:14px">${esc(t('themes.rankPlaceholder', { n: i + 1, from: RANK_THRESHOLDS[i] }))}</span>
+          <input class="field" data-rank="${i}" maxlength="20"
+                 value="${esc(draft.ranks[i] || '')}" placeholder="${esc(t(`rank.${i + 1}`))}">
+        </div>`).join('');
+      $('ranks').querySelectorAll('[data-rank]').forEach(el => {
+        el.oninput = () => { draft.ranks[Number(el.dataset.rank)] = el.value; renderPreview(); };
+      });
+    }
+
+    // Предпросмотр рисуется теми же переменными, что и экран ребёнка: родитель
+    // видит не палитру в вакууме, а кнопку «Убирать!» своим цветом.
+    function renderPreview() {
+      const preview = { ...draft, name: $('theme-name').value.trim() };
+      const th = resolveTheme({ ...preview, id: preview.id || 'preview' });
+      const box = $('preview-box');
+      for (const [name, value] of Object.entries(themeCssVars({ ...preview, id: 'preview' }))) {
+        box.style.setProperty(name, value);
+      }
+      $('preview-chip').textContent = `${th.currencyEmoji} ${th.label}`;
+      $('preview-rank').textContent = themeRanks(preview).join(' · ');
+    }
+    $('theme-name').addEventListener('input', renderPreview);
+
+    function renderEditorCards() {
+      const has = !!draft?.id;
+      $('cards-need-save').classList.toggle('hidden', has);
+      $('btn-add-card').disabled = !has;
+      const n = has ? normalizeCatalog(cards).filter(c => c.theme === draft.id).length : 0;
+      $('theme-cards-count').textContent = t('cards.forTheme', { n });
+      $('theme-cards-empty').classList.toggle('hidden', !has || n > 0);
+      if (has) renderCardGrid($('theme-grid'), draft.id);
+      else $('theme-grid').innerHTML = '';
+    }
+
+    $('btn-add-theme').onclick = () => openEditor(null);
+    $('btn-cancel-theme').onclick = () => { draft = null; renderList(); show('step-list'); };
+    $('btn-delete-theme').onclick = async () => {
+      if (!draft?.id) return;
+      const before = themes.length;
+      await dropTheme(draft);
+      if (themes.length < before) { draft = null; show('step-list'); }
+    };
+    $('btn-save-theme').onclick = async () => {
+      if (!draft) return;
+      const typed = $('theme-name').value.trim();
+      const patch = {
+        // Имя пресета, которое родитель не трогал, не «вписываем» в тему: пусть
+        // остаётся из словаря и переводится вместе с приложением. Своё имя —
+        // сразу и навсегда своё, на языке семьи.
+        name: (!isNew && draft.preset && typed === resolveTheme(draft).label) ? draft.name : typed,
+        emoji: draft.emoji,
+        colors: { ...draft.colors },
+        ranks: draft.ranks.map(r => String(r || '').trim()),
+      };
+      if (isNew && !patch.name) { toast(t('themes.err.name-required')); return; }
+      const res = isNew ? addTheme(themes, patch) : updateTheme(themes, draft.id, patch);
+      if (res.error) { toast(t(`themes.err.${res.error}`)); return; }
+      const savedId = isNew ? res.themes[res.themes.length - 1].id : draft.id;
+      $('btn-save-theme').disabled = true;
+      try {
+        themes = await saveFamilyThemes(fid, res.themes);
+        // После сохранения новая тема получает id — карточки в неё можно
+        // грузить не выходя из редактора.
+        const saved = themes.find(x => x.id === savedId);
+        if (saved) draft = { ...saved, colors: { ...saved.colors }, ranks: [...saved.ranks] };
+        isNew = false;
+        $('edit-title').textContent = t('themes.editTitle');
+        $('btn-delete-theme').classList.toggle('hidden', themes.length <= 1);
+        renderEditorCards();
+        renderList();
+        toast(t('themes.saved'));
+      } catch (e) { console.error(e); toast(t('themes.saveFailed')); }
+      finally { $('btn-save-theme').disabled = false; }
+    };
+
+    // ── Карточки: съёмка → подпись → сохранение ──
+    async function goShoot(themeId) {
+      cardTheme = themeId;
+      $('card-name').value = '';
+      show('step-shoot');
+      try {
+        await startCamera($('video'));
+        $('frame').style.display = '';
+        $('cam-error').textContent = '';
+      } catch (e) {
+        $('frame').style.display = 'none';
+        $('cam-error').textContent = cameraErrorText(e);
+      }
+    }
+    function backFromCard() {
+      stopCamera(); dropShot();
+      if (draft) { renderEditorCards(); show('step-edit'); } else { renderList(); show('step-list'); }
+    }
+
+    async function capture(source) {
+      try {
+        dropShot();
+        shot = await compressCard(source);
+        stopCamera();
+        $('preview-card').src = shot.url;
+        renderCardThemePick();
+        show('step-meta');
+        $('card-name').focus();
+      } catch (e) { console.error(e); toast(t('cards.captureFailed')); }
+    }
+    function dropShot() { if (shot?.url) URL.revokeObjectURL(shot.url); shot = null; }
+
+    // Тему карточки можно поменять прямо здесь: «сняли не для той темы» —
+    // обычное дело, а переснимать из-за этого обидно.
+    function renderCardThemePick() {
+      const options = [{ id: CARD_ANY, label: t('cards.forBoth') },
+        ...themes.map(doc => { const th = resolveTheme(doc); return { id: doc.id, label: `${th.currencyEmoji} ${th.label}` }; })];
+      $('card-theme-pick').innerHTML = options.map(o =>
+        `<button class="btn btn-ghost ${o.id === cardTheme ? 'on' : ''}" data-pick="${esc(o.id)}">${esc(o.label)}</button>`).join('');
+      $('card-theme-pick').querySelectorAll('[data-pick]').forEach(el => {
+        el.onclick = () => { cardTheme = el.dataset.pick; renderCardThemePick(); };
+      });
+    }
+
+    $('btn-add-any').onclick = () => { draft = null; goShoot(CARD_ANY); };
+    $('btn-add-card').onclick = () => { if (draft?.id) goShoot(draft.id); };
+    $('btn-shot').onclick = () => capture($('video'));
+    $('file-input').onchange = e => { const f = e.target.files?.[0]; if (f) capture(f); e.target.value = ''; };
+    $('btn-cancel-shot').onclick = backFromCard;
+    $('btn-retake').onclick = () => { dropShot(); goShoot(cardTheme); };
+    $('btn-save-card').onclick = async () => {
+      if (!shot) return;
+      const name = $('card-name').value.trim();
+      if (!name) { toast(t('cards.needName')); $('card-name').focus(); return; }
+      $('btn-save-card').disabled = true;
+      try {
+        const id = makeCardId(name);
+        const saved = await saveCard(fid, id, shot.blob, { name, theme: cardTheme, w: shot.w, h: shot.h });
+        cards = [...cards, saved];
+        dropShot();
+        backFromCard();
+        toast(t('cards.added'));
+      } catch (e) {
+        console.error(e);
+        toast(t(e?.code === 'storage/unauthorized' ? 'cards.storageDenied' : 'house.saveFailed'));
+      } finally { $('btn-save-card').disabled = false; }
+    };
+
+    // ── Старт: только для родителя ──
+    (async () => {
+      const user = await initAuth();
+      if (!user || !currentUid()) { location.href = 'index.html'; return; }
+      const families = await listMyFamilies();
+      fid = resolveActiveFamily(families) || getActiveFamilyId();
+      // Родительская часть под кодом: если он задан, а в этой сессии его не
+      // вводили — отправляем на главную, там спросят. Замок от ребёнка, не от взлома.
+      const settings = await getSettings(fid).catch(() => null);
+      applyFamilyLang(settings); applyFamilyThemes(settings); applyI18n();
+      if (parentAreaLocked(settings) && !isParentUnlocked()) { location.href = 'index.html'; return; }
+      themes = familyThemes();
+      try { cards = await listCards(fid); } catch (e) { console.warn('cards:', e); }
+      renderList();
+    })();
+  </script>
+  <script src="pwa.js"></script>
+</body>
+</html>

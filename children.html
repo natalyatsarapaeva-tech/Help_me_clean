@@ -51,7 +51,7 @@
     import {
       initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
       listProfiles, createChildProfile, setProfilePin, deleteProfile,
-      getSettings, isParentUnlocked,
+      getSettings, isParentUnlocked, applyFamilyLang, applyFamilyThemes,
     } from './js/store.js';
     import { theme } from './js/family-core.js';
     import { normalizeProfiles, isLocked, parentAreaLocked } from './js/profile-core.js';
@@ -141,6 +141,9 @@
       // Замок родительской части: если код задан, а его в этой сессии не вводили —
       // отправляем на главную, где спросят. Это защита от ребёнка, а не от взлома.
       const settings = await getSettings(fid).catch(() => null);
+      // Темы семьи — до отрисовки списка: в строке ребёнка стоит подпись образа,
+      // которым он был в прошлый раз, а имена образов придумывает родитель.
+      applyFamilyLang(settings); applyFamilyThemes(settings); applyI18n();
       if (parentAreaLocked(settings) && !isParentUnlocked()) { location.href = 'index.html'; return; }
       await reload();
     })();

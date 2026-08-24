@@ -5,7 +5,7 @@
  */
 const CACHE = 'tidy-v10';
 const ASSETS = [
-  './', './index.html', './home.html', './children.html', './scan.html', './reference.html', './cards.html', './collection.html', './rewards.html', './shop.html',
+  './', './index.html', './home.html', './children.html', './scan.html', './reference.html', './themes.html', './collection.html', './rewards.html', './shop.html',
   './styles.css', './pwa.js', './manifest.json',
   './js/firebase.js', './js/store.js', './js/family-core.js', './js/i18n.js',
   './js/pin.js', './js/profile-core.js', './js/image.js', './js/ai.js', './js/round-core.js', './js/camera.js', './js/cards-core.js', './js/shop-core.js', './js/limits-core.js', './js/bonus-core.js',
