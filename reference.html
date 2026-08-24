@@ -18,6 +18,9 @@
     .thumb.empty { display: flex; align-items: center; justify-content: center; font-size: 34px; color: var(--muted); }
     .ref-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .ref-actions .btn { min-height: 52px; padding: 0 16px; }
+    .check-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .check-row .btn { min-height: 52px; padding: 0 18px; }
+    .check-row .btn.on { outline: 4px solid var(--accent); }
     .frame { position: relative; border-radius: var(--radius); overflow: hidden; background: #000; line-height: 0; max-width: 860px; }
     .frame video, .frame img { display: block; width: 100%; max-height: 62vh; object-fit: contain; background: #000; }
     .hint-over { position: absolute; left: 0; right: 0; top: 0; padding: 12px 16px; color: #fff; font-weight: 800;
@@ -36,6 +39,15 @@
     <!-- Список комнат: где эталон снят, где нет. -->
     <section id="step-list" class="step on col">
       <p class="muted" data-i18n-html="reference.intro"></p>
+
+      <!-- Обязательна ли проверка по фото. Настройка живёт здесь, а не в общем
+           списке настроек: решать «строго или мягко» осмысленно там же, где
+           видно, с чем сравнивается детское «после». -->
+      <div class="card col" id="check-box">
+        <strong data-i18n="reference.check.title">Photo check</strong>
+        <div class="check-row" id="check-row"></div>
+        <div class="muted" id="check-hint" style="font-size:15px">—</div>
+      </div>
       <div class="chip" id="coverage">—</div>
       <div id="rooms" class="col"></div>
     </section>
@@ -78,12 +90,12 @@
     import {
       initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
       getHome, listReferences, saveReference, deleteReference, getSettings, isParentUnlocked,
-      applyFamilyLang,
+      applyFamilyLang, applyFamilyThemes, setPhotoCheckRequired,
     } from './js/store.js';
     import { parentAreaLocked } from './js/profile-core.js';
     import { startCamera, stopCamera, cameraErrorText } from './js/camera.js';
     import { compressReference } from './js/image.js';
-    import { roomsInOrder, reconcileRouteOrder, referenceCoverage } from './js/family-core.js';
+    import { roomsInOrder, reconcileRouteOrder, referenceCoverage, photoCheckRequired } from './js/family-core.js';
     import { t, applyI18n } from './js/i18n.js';
 
     const $ = id => document.getElementById(id);
@@ -94,7 +106,35 @@
     const toast = (m) => { const el = $('toast'); el.textContent = m; el.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), 2600); };
     applyI18n();
 
-    let fid = null, rooms = [], refs = [], target = null, shot = null;
+    let fid = null, rooms = [], refs = [], target = null, shot = null, settings = null;
+
+    // Два состояния, а не галочка: подпись «обязательна / по желанию» читается
+    // без домысливания, что означает пустой квадратик.
+    function renderCheck() {
+      const required = photoCheckRequired(settings);
+      $('check-row').innerHTML = [true, false].map(v => `
+        <button class="btn btn-ghost ${v === required ? 'on' : ''}" data-check="${v}">
+          ${esc(t(v ? 'reference.check.on' : 'reference.check.off'))}
+        </button>`).join('');
+      $('check-hint').textContent = t(required ? 'reference.check.hintOn' : 'reference.check.hintOff');
+      $('check-row').querySelectorAll('[data-check]').forEach(el => {
+        el.onclick = async () => {
+          const want = el.dataset.check === 'true';
+          if (want === photoCheckRequired(settings)) return;
+          $('check-row').querySelectorAll('button').forEach(b => { b.disabled = true; });
+          try {
+            await setPhotoCheckRequired(fid, want);
+            settings = { ...(settings || {}), photoCheckRequired: want };
+            renderCheck();
+            toast(t('reference.check.saved'));
+          } catch (e) {
+            console.error(e);
+            toast(t('reference.check.saveFailed'));
+            renderCheck();
+          }
+        };
+      });
+    }
 
     function renderList() {
       const cov = referenceCoverage(rooms, refs);
@@ -192,9 +232,10 @@
       fid = resolveActiveFamily(families) || getActiveFamilyId();
       // Родительская часть под кодом: если он задан, а в этой сессии его не
       // вводили — отправляем на главную, там спросят. Замок от ребёнка, не от взлома.
-      const settings = await getSettings(fid).catch(() => null);
-      applyFamilyLang(settings); applyI18n();
+      settings = await getSettings(fid).catch(() => null);
+      applyFamilyLang(settings); applyFamilyThemes(settings); applyI18n();
       if (parentAreaLocked(settings) && !isParentUnlocked()) { location.href = 'index.html'; return; }
+      renderCheck();
 
       const home = await getHome(fid);
       const all = roomsInOrder(home || { floors: [] });

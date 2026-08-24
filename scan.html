@@ -251,6 +251,10 @@
           <div class="task-text" id="recheck-text">—</div>
           <div class="muted" id="recheck-count"></div>
           <button class="btn btn-primary btn-big" id="btn-recheck-go" data-i18n="scan.recheckGo">Done! Shoot it again</button>
+          <!-- Выход из проверки — только если семья разрешила её не проходить
+               (переключатель в разделе эталонов). При обязательной проверке
+               кнопки нет: иначе она и есть самый простой способ «убраться». -->
+          <button class="btn btn-ghost hidden" id="btn-recheck-finish" data-i18n="scan.recheckFinishAnyway">Done anyway ✓</button>
           <div class="muted" style="font-size:14px" data-i18n="scan.recheckKeep">The sparkles for the steps are already yours.</div>
         </div>
       </div>
@@ -270,7 +274,7 @@
         <div id="limit-note" class="muted hidden"></div>
       </div>
 
-      <!-- Награда-карточка: каталог загружает родитель (cards.html), выпадает
+      <!-- Награда-карточка: каталог загружает родитель (themes.html), выпадает
            только за уборку, подтверждённую проверкой. -->
       <div class="card col hidden" id="card-win">
         <strong id="card-win-title" data-i18n="scan.cardWin">A new card!</strong>
@@ -331,7 +335,7 @@
     import {
       initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
       getHome, getProfile, getSettings, getReference, getRewards, saveRewards, saveProgress,
-      listCards, getActiveProfileId, applyFamilyLang,
+      listCards, getActiveProfileId, applyFamilyLang, applyFamilyThemes,
     } from './js/store.js';
     import {
       awardRound, isPlaceExhausted, isRoomExhausted, placeCount, roomCount,
@@ -341,9 +345,10 @@
     import { startCamera, stopCamera, cameraErrorText } from './js/camera.js';
     import { prepareScanFrame, revokeFrame } from './js/image.js';
     import {
-      theme, roomsInOrder, reconcileRouteOrder, FALLBACK_THEME, addCard, cardsForTheme,
-      missedPhrase, VERIFY_LIMITS,
+      theme, roomsInOrder, reconcileRouteOrder, addCard, cardsForTheme,
+      missedPhrase, VERIFY_LIMITS, canFinishUnverified,
     } from './js/family-core.js';
+    import { applyThemeVars } from './js/theme-apply.js';
     import { pickCard } from './js/cards-core.js';
     import { pickBonus, awardBonus, bonusesLeftToday } from './js/bonus-core.js';
     import {
@@ -375,7 +380,11 @@
     // и его надо показать ДО уборки, а не «сюрпризом» в конце.
     let myRewards = null;
     let bonus = null; // предложенное бонусное задание
-    let th = theme(sessionStorage.getItem('tidy.todayTheme') || FALLBACK_THEME);
+    // Настройки семьи: из них тема (палитра и подписи образа) и то, обязательна
+    // ли проверка по фото. До их загрузки рисуем пресетом, чтобы экран не ждал сети.
+    let settings = null;
+    let th = theme(sessionStorage.getItem('tidy.todayTheme'));
+    let recheckResult = null;  // что вернула непройденная проверка — для «всё равно готово»
     let rooms = [], room = null;
     // Режим A (стол крупным планом) или B (обход комнаты) — выбирает ребёнок.
     let mode = 'closeup';
@@ -388,7 +397,13 @@
     let limitNote = '';       // «это место сегодня уже убирали» — считается сразу после скана
     let timerId = null;
 
-    document.documentElement.setAttribute('data-theme', th.id);
+    applyThemeVars(th);
+    // Тема семьи приезжает вместе с настройками: до этого на экране пресет.
+    function adoptTheme() {
+      th = theme(sessionStorage.getItem('tidy.todayTheme'));
+      applyThemeVars(th);
+      renderHeader();
+    }
 
     // Одна фраза под режим: на столе «Собери бумаги. Их четыре», в обходе
     // «Синий грузовик — в ящик с игрушками».
@@ -758,6 +773,8 @@
     function showRecheck(frame, result) {
       if (frameAfter) revokeFrame(frameAfter);
       frameAfter = frame;
+      recheckResult = result;
+      $('btn-recheck-finish').classList.toggle('hidden', !canFinishUnverified(settings));
       $('recheck-shot').src = frame.url;
       $('recheck-boxes').innerHTML = (result.boxes || []).map(b => {
         const [x, y, w, h] = b.box;
@@ -787,6 +804,17 @@
     $('btn-recheck-go').onclick = async () => {
       if (frameAfter) { revokeFrame(frameAfter); frameAfter = null; }
       await goVerify();
+    };
+    // «Всё равно готово»: раунд закрывается как непройденный — искорки за шаги
+    // остаются, бонус за комнату, счётчик уборок и карточка не начисляются
+    // (это решает awardRound и правило карточки в finish). Врать о результате
+    // не нужно, а тупика и так нет.
+    $('btn-recheck-finish').onclick = async () => {
+      if (!canFinishUnverified(settings)) return;
+      const result = recheckResult;
+      if (frameAfter) { revokeFrame(frameAfter); frameAfter = null; }
+      recheckResult = null;
+      await finish(result || { ...EMPTY_VERIFY_UI });
     };
 
     // ── Финал: начисление и запись ──
@@ -1087,14 +1115,16 @@
 
       try { myRewards = await getRewards(fid, profileId); } catch (e) { console.warn('rewards:', e); }
 
-      // Музыка (§ плейлист задаёт родитель в настройках семьи).
+      // Настройки семьи: темы (их придумал родитель), язык, строгость проверки
+      // и плейлист. Тему подхватываем сразу — экран уже нарисован пресетом.
       try {
-        const settings = await getSettings(fid);
+        settings = await getSettings(fid);
         // Второй планшет, где язык ещё не выбирали, подхватывает язык семьи.
-        applyFamilyLang(settings); applyI18n();
+        applyFamilyLang(settings); applyFamilyThemes(settings); applyI18n();
+        adoptTheme();
         const url = settings?.playlists?.[th.id];
         if (url) { $('btn-music').href = url; $('btn-music').classList.remove('hidden'); }
-      } catch (_) {}
+      } catch (e) { console.warn('settings:', e); }
 
       // Комнаты в порядке маршрута: у ребёнка свой порядок, иначе общий по дому.
       try {

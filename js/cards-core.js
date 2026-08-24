@@ -1,23 +1,30 @@
 // Чистое ядро КОЛЛЕКЦИИ карточек (без Firebase/DOM, тестируется в Node).
 //
-// Карточки не зашиты в код: их загружает родитель (cards.html) — фото наклейки,
+// Карточки не зашиты в код: их загружает родитель (themes.html) — фото наклейки,
 // рисунка, кадра из мультика, снимка самого ребёнка. Поэтому приложению не нужно
 // придумывать существ и не нужно тащить франшизные отсылки (§51): каталог —
 // это данные семьи, а не наш контент.
 //
 //   families/{fid}/cards/{cardId}          — каталог семьи (пишет родитель)
 //   .../profiles/{pid}/rewards/current
-//        cardsByTheme: { minion:[id], jedi:[id] }  — что ребёнок УЖЕ добыл
+//        cardsByTheme: { <themeId>: [cardId] }     — что ребёнок УЖЕ добыл
 //
-// Карточка принадлежит образу (§49): у миньонов своя витрина, у джедаев своя.
-// 'any' — карточка, которая может выпасть в любом образе (её удобно давать
-// семейным фото и всему, что не про франшизу).
-import { THEME_IDS, isValidTheme, FALLBACK_THEME } from './family-core.js';
+// Карточка принадлежит теме (§49): у «динозавров» своя витрина, у «космоса»
+// своя. 'any' — карточка, которая может выпасть в любой теме (её удобно давать
+// семейным фото и всему, что не привязано к одному образу).
+//
+// Темы у каждой семьи свои и правятся на themes.html, поэтому список тем
+// карточки — ФУНКЦИЯ, а не константа: он меняется, пока приложение открыто.
+import { themeIds, isValidTheme, fallbackThemeId } from './family-core.js';
+import { migrateLegacyThemeId } from './themes-core.js';
 
 export const CARD_ANY = 'any';
-export const CARD_THEMES = [CARD_ANY, ...THEME_IDS];
-export function isValidCardTheme(t) { return CARD_THEMES.includes(t); }
-export function normalizeCardTheme(t) { return isValidCardTheme(t) ? t : CARD_ANY; }
+export function cardThemes() { return [CARD_ANY, ...themeIds()]; }
+export function isValidCardTheme(t) { return cardThemes().includes(t); }
+export function normalizeCardTheme(t) {
+  const id = migrateLegacyThemeId(t);
+  return isValidCardTheme(id) ? id : CARD_ANY;
+}
 
 // Приведение документа карточки к предсказуемой форме: экран рисует только то,
 // у чего есть картинка и id.
@@ -41,7 +48,7 @@ export function normalizeCatalog(raw) {
 // Витрина образа: карточки этого образа + общие. Порядок каталога сохраняем —
 // родитель загружал их в каком-то своём порядке, и он осмысленный.
 export function cardsPool(catalog, themeId) {
-  const t = isValidTheme(themeId) ? themeId : FALLBACK_THEME;
+  const t = isValidTheme(themeId) ? migrateLegacyThemeId(themeId) : fallbackThemeId();
   return normalizeCatalog(catalog).filter(c => c.theme === t || c.theme === CARD_ANY);
 }
 // Что ещё можно добыть в этом образе.
@@ -80,7 +87,7 @@ export function collectionView(catalog, themeId, ownedIds) {
 // Сводка по всем образам — для родителя: «сколько всего загружено и куда».
 export function catalogSummary(catalog) {
   const all = normalizeCatalog(catalog);
-  const byTheme = Object.fromEntries(CARD_THEMES.map(t => [t, all.filter(c => c.theme === t).length]));
+  const byTheme = Object.fromEntries(cardThemes().map(t => [t, all.filter(c => c.theme === t).length]));
   return { total: all.length, byTheme };
 }
 

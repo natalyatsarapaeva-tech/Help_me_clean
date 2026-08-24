@@ -13,6 +13,9 @@
 // по-русски или по-английски — решает словарь. Поэтому все подписи ниже —
 // функции, а не константы: язык переключается в родительской части на лету.
 import { t, tList } from './i18n.js';
+import {
+  defaultThemes, normalizeThemes, resolveTheme, migrateLegacyThemeId,
+} from './themes-core.js';
 
 // ── Роли ────────────────────────────────────────────────────────────────────
 export const ROLES = ['parent', 'child'];
@@ -211,52 +214,61 @@ export function zoneNeedsCloseup(kind, itemsEstimate, said) {
   return zoneKind(kind).closeup && (Number(itemsEstimate) || 0) >= 3;
 }
 
-// ── Темы (§43 ТЗ). Механика одна, различаются палитра/тексты/шаг/озвучка ────
-// Вынесены отдельно, чтобы подменить франшизные отсылки за час (§51).
-// Палитра, валюта и голос — здесь; подпись образа, название валюты и слово
-// похвалы — в словаре (theme.<id>.label/.currencyName/.praiseWord).
-export const THEMES = {
-  minion: {
-    id: 'minion',
-    currencyEmoji: '🍌',
-    voice: 'loud', stepGranularity: 'fine', tts: true,
-    colors: { primary: '#FFD836', secondary: '#3A5DA8', bg: '#FFFFFF', ink: '#111111', accent: '#3A5DA8' },
-  },
-  jedi: {
-    id: 'jedi',
-    currencyEmoji: '💎',
-    voice: 'calm', stepGranularity: 'coarse', tts: false,
-    colors: { primary: '#12203F', secondary: '#4FC3F7', bg: '#0B1220', ink: '#E8EEF7', accent: '#5BE37D' },
-  },
-};
-export const THEME_IDS = Object.keys(THEMES);
+// ── Темы (§43 ТЗ) — их придумывает СЕМЬЯ, а не мы ────────────────────────────
+// Раньше здесь лежал зашитый объект THEMES с двумя франшизными образами.
+// Теперь темы — данные семьи (families/{fid}/settings/app → themes), и правит
+// их родитель на themes.html: имя, палитра, названия рангов, карточки.
+// Форма, палитра и правила — в js/themes-core.js; здесь только РЕЕСТР: какие
+// темы сейчас у семьи и как по id получить готовую к отрисовке тему.
+//
+// Реестр модульный, а не параметр каждой функции, ровно потому, что тему
+// спрашивает почти каждый экран (`theme(id).currencyEmoji` в счётчике искорок,
+// в магазине, в коллекции). Экран ставит темы семьи один раз после загрузки
+// настроек — applyFamilyThemes(settings) в js/store.js, — дальше всё работает
+// как раньше. Пока настройки не загружены, в реестре пресеты: приложение
+// рисуется, а не падает.
+let FAMILY_THEMES = defaultThemes();
+export function setFamilyThemes(list) { FAMILY_THEMES = normalizeThemes(list); return FAMILY_THEMES; }
+// Документы тем как есть — для экрана родителя (там их правят, а не рисуют).
+export function familyThemes() { return FAMILY_THEMES.map(th => ({ ...th, colors: { ...th.colors }, ranks: [...th.ranks] })); }
+export function themeIds() { return FAMILY_THEMES.map(th => th.id); }
 // ВАЖНО: у профиля НЕТ темы по умолчанию. Тема — выбор самого ребёнка на входе
-// («Кто ты сегодня?»), а не настройка, которую задаёт родитель. Эта константа —
-// только фолбэк отрисовки, пока выбор не сделан.
-export const FALLBACK_THEME = 'minion';
-function localizeTheme(base) {
-  return {
-    ...base,
-    label: t(`theme.${base.id}.label`),
-    currencyName: t(`theme.${base.id}.currencyName`),
-    praiseWord: t(`theme.${base.id}.praiseWord`),
-  };
+// («Кто ты сегодня?»), а не настройка, которую задаёт родитель. Первая тема
+// семьи — только фолбэк отрисовки, пока выбор не сделан.
+export function fallbackThemeId() { return FAMILY_THEMES[0].id; }
+export function theme(id) {
+  const key = migrateLegacyThemeId(id);
+  return resolveTheme(FAMILY_THEMES.find(th => th.id === key) || FAMILY_THEMES[0]);
 }
-export function theme(id) { return localizeTheme(THEMES[id] || THEMES[FALLBACK_THEME]); }
-export function isValidTheme(id) { return Object.prototype.hasOwnProperty.call(THEMES, id); }
-export function normalizeTheme(id) { return isValidTheme(id) ? id : null; }
+export function isValidTheme(id) { return FAMILY_THEMES.some(th => th.id === migrateLegacyThemeId(id)); }
+export function normalizeTheme(id) {
+  const key = migrateLegacyThemeId(id);
+  return isValidTheme(key) ? key : null;
+}
 
-// Ранги Джедая (§37) — прогресс только растёт.
-// Пороги — здесь, подписи — в словаре (rank.1…rank.4).
+// Ранги (§37) — прогресс только растёт.
+// Пороги — здесь (они про механику), названия — у темы: «Яйцо → Тираннозавр»
+// придумывает родитель под интересы ребёнка, а не мы под чужую франшизу.
 export const RANK_THRESHOLDS = [0, 8, 25, 60];
-export function jediRanks() { return RANK_THRESHOLDS.map((_, i) => t(`rank.${i + 1}`)); }
+export function rankNames(themeId) { return theme(themeId).ranks; }
 export function rankIndexForCleanups(n) {
   const c = Number(n) || 0;
   let i = 0;
   while (i + 1 < RANK_THRESHOLDS.length && c >= RANK_THRESHOLDS[i + 1]) i += 1;
   return i;
 }
-export function rankForCleanups(n) { return t(`rank.${rankIndexForCleanups(n) + 1}`); }
+export function rankForCleanups(n, themeId) { return rankNames(themeId)[rankIndexForCleanups(n)]; }
+
+// ── Проверка по фото: обязательна или нет (настройка семьи) ─────────────────
+// Умолчание — обязательна: проверка «после» и есть то, ради чего снимают фото,
+// и именно она держит счётчик уборок честным. Но семьям с малышом, у которого
+// «убрано» и «убрано по эталону» — разные вселенные, нужен выход: с выключенной
+// настройкой ребёнок видит разбор кадра и может закрыть уборку сам.
+// Переключатель — в разделе эталонов (reference.html): там же объяснено, с чем
+// сравнивается «после».
+export function photoCheckRequired(settings) { return settings?.photoCheckRequired !== false; }
+// Можно ли закрыть раунд, который проверка не засчитала.
+export function canFinishUnverified(settings) { return !photoCheckRequired(settings); }
 
 // ── Награды (§317). Валюта начисляется только за ЗАКРЫТЫЕ шаги. ──────────────
 // ДВА числа, а не одно:
@@ -264,21 +276,21 @@ export function rankForCleanups(n) { return t(`rank.${rankIndexForCleanups(n) + 
 //   earnedTotal — сколько заработано ЗА ВСЁ ВРЕМЯ: не убывает никогда.
 // Разделены ради покупок: тратить надо, а обнулять достигнутое нельзя (§336).
 // Ранг и «сколько ты уже наработал» считаются от earnedTotal и cleanupsTotal —
-// покупка мороженого не понижает ребёнка из Рыцаря обратно в Падаваны.
+// покупка мороженого не понижает ребёнка из третьего ранга обратно во второй.
 export const SPARKLES = { step: 1, room: 5, day: 15 };
 export function sparklesFor(kind) { return SPARKLES[kind] || 0; }
 
 // Что принадлежит РЕБЁНКУ, а что ТЕМЕ:
 //   валюта, счётчик уборок, реальные награды — общие: ребёнок один, тему он
 //   меняет как настроение, и прогресс за это не должен теряться (§49);
-//   коллекция карточек — своя у каждой темы: у миньонов свои существа, у
-//   джедаев свои. Смена темы показывает другую витрину, ничего не отнимая.
+//   коллекция карточек — своя у каждой темы: у «динозавров» свои карточки, у
+//   «космоса» свои. Смена темы показывает другую витрину, ничего не отнимая.
 export function emptyRewards() {
   return {
     currency: 0,      // баланс: тратится покупками
     earnedTotal: 0,   // заработано за всё время: только растёт
     cleanupsTotal: 0,
-    cardsByTheme: Object.fromEntries(THEME_IDS.map(t => [t, []])),
+    cardsByTheme: Object.fromEntries(themeIds().map(t => [t, []])),
     realRewards: [],   // покупки реальных наград, см. js/shop-core.js
     dailyRooms: { day: null, rooms: {}, places: {} }, // дневной лимит, см. js/limits-core.js
     dailyBonus: { day: null, ids: {}, total: 0 },      // бонусные задания, см. js/bonus-core.js
@@ -312,13 +324,17 @@ export function normalizeRewards(raw) {
   const r = (raw && typeof raw === 'object') ? raw : {};
   const base = emptyRewards();
   const byTheme = { ...base.cardsByTheme };
-  for (const t of THEME_IDS) {
-    const list = r.cardsByTheme?.[t];
-    if (Array.isArray(list)) byTheme[t] = list.slice();
+  // Читаем ВСЕ коллекции документа, а не только темы, которые есть у семьи
+  // сейчас: родитель мог удалить тему или переименовать franchise-id прошлой
+  // версии — добытое при этом не пропадает (§336), просто не показывается.
+  for (const [rawId, list] of Object.entries(r.cardsByTheme || {})) {
+    if (!Array.isArray(list)) continue;
+    const id = migrateLegacyThemeId(rawId);
+    byTheme[id] = Array.from(new Set([...(byTheme[id] || []), ...list]));
   }
   if (Array.isArray(r.cards) && r.cards.length) {
-    const legacy = byTheme[FALLBACK_THEME] || [];
-    byTheme[FALLBACK_THEME] = Array.from(new Set([...legacy, ...r.cards]));
+    const legacy = byTheme[fallbackThemeId()] || [];
+    byTheme[fallbackThemeId()] = Array.from(new Set([...legacy, ...r.cards]));
   }
   const currency = Number(r.currency) || 0;
   return {
@@ -335,13 +351,14 @@ export function normalizeRewards(raw) {
 }
 // Коллекция конкретной темы (витрина, куда ребёнок возвращается).
 export function cardsForTheme(rewards, themeId) {
-  return normalizeRewards(rewards).cardsByTheme[normalizeTheme(themeId) || FALLBACK_THEME] || [];
+  return normalizeRewards(rewards).cardsByTheme[normalizeTheme(themeId) || fallbackThemeId()] || [];
 }
 // Чистое добавление карточки в коллекцию темы (без дублей). Вход не мутирует.
 export function addCard(rewards, themeId, cardId) {
   const out = normalizeRewards(rewards);
-  const t = normalizeTheme(themeId) || FALLBACK_THEME;
-  if (cardId && !out.cardsByTheme[t].includes(cardId)) out.cardsByTheme[t] = [...out.cardsByTheme[t], cardId];
+  const t = normalizeTheme(themeId) || fallbackThemeId();
+  const owned = out.cardsByTheme[t] || [];
+  if (cardId && !owned.includes(cardId)) out.cardsByTheme[t] = [...owned, cardId];
   return out;
 }
 // Начисление валюты — всегда на ребёнка, независимо от выбранной темы.
