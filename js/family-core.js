@@ -65,6 +65,50 @@ export const ROOM_TYPES = ['kitchen', 'bedroom_child', 'bathroom', 'living', 'ha
 export function isValidRoomType(t) { return ROOM_TYPES.includes(t); }
 export function normalizeRoomType(t) { return ROOM_TYPES.includes(t) ? t : 'other'; }
 
+// ── Точки в комнате (surfaces) ──────────────────────────────────────────────
+// Комната — слишком крупная единица для всего, что мы делаем: сканер называет
+// снятое МЕСТО («стол у окна»), дневной лимит считает по местам, эталонные фото
+// напрашиваются туда же. Поэтому у комнаты есть список её точек, и он живёт в
+// карте дома: родитель называет их один раз, а дальше сканеру велено брать
+// название ОТТУДА дословно — иначе один и тот же угол зовётся то «раковиной»,
+// то «умывальником», и лимит с эталоном промахиваются.
+export const MAX_SURFACES = 8;      // больше — это уже не «точки», а инвентаризация
+export const MAX_SURFACE_NAME = 24;
+
+// Готовые точки под тип комнаты: нажать быстрее, чем печатать, а названия
+// получаются одинаковыми у всех комнат — ровно то, что нужно сканеру.
+export const SURFACE_SUGGESTIONS = {
+  kitchen: ['Столешница', 'Обеденный стол', 'Раковина', 'Пол'],
+  bedroom_child: ['Стол', 'Полка', 'Кровать', 'Тумбочка', 'Пол'],
+  bathroom: ['Раковина', 'Столешница', 'Полка', 'Пол'],
+  living: ['Журнальный столик', 'Полка', 'Диван', 'Пол'],
+  hall: ['Полка для обуви', 'Тумбочка', 'Вешалка', 'Пол'],
+  utility: ['Стеллаж', 'Столешница', 'Пол'],
+  other: ['Стол', 'Полка', 'Пол'],
+};
+export function surfaceSuggestions(roomType) {
+  return SURFACE_SUGGESTIONS[normalizeRoomType(roomType)] || SURFACE_SUGGESTIONS.other;
+}
+// «стол  у ОКНА » → «Стол у окна». Регистр и лишние пробелы — не различия:
+// без этого «Стол» и «стол» станут двумя разными точками одной комнаты.
+export function normalizeSurfaceName(raw) {
+  const t = String(raw || '').replace(/[«»"'`]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, MAX_SURFACE_NAME);
+  return t ? t[0].toUpperCase() + t.slice(1).toLowerCase() : '';
+}
+export function normalizeSurfaces(list) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of (Array.isArray(list) ? list : [])) {
+    const name = normalizeSurfaceName(raw);
+    const key = name.toLowerCase();
+    if (!name || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+    if (out.length >= MAX_SURFACES) break;
+  }
+  return out;
+}
+
 // ── Норма порядка: что вообще считается «убрано» ────────────────────────────
 // Одно определение на всё приложение: по нему сканер ищет работу, по нему же
 // проверка решает, стало ли чисто. Раньше требования были «лайтовые» — снять
@@ -572,7 +616,7 @@ export function sanitizeHome(raw) {
       name: String(rm?.name || '').trim(),
       type: normalizeRoomType(rm?.type),
       icon: String(rm?.icon || '🏠'),
-      surfaces: Array.isArray(rm?.surfaces) ? rm.surfaces.map(String) : [],
+      surfaces: normalizeSurfaces(rm?.surfaces),
       typical_clutter: Array.isArray(rm?.typical_clutter) ? rm.typical_clutter.map(String) : [],
       needs_confirmation: rm?.needs_confirmation === true,
     })).filter(rm => rm.name),

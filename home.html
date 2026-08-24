@@ -12,9 +12,23 @@
   <style>
     .back { text-decoration: none; color: var(--muted); font-weight: 800; }
     textarea.field { min-height: 160px; padding: 14px 16px; resize: vertical; line-height: 1.4; }
-    .room { display: grid; grid-template-columns: 56px 1fr 180px 44px; gap: 10px; align-items: center; }
+    .room { border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+    .room-head { display: grid; grid-template-columns: 56px 1fr 180px 48px; gap: 10px; align-items: center; }
     .room .emoji { width: 56px; height: 56px; text-align: center; font-size: 26px; padding: 0; }
-    .room .del { width: 44px; height: 44px; padding: 0; font-size: 20px; }
+    .room .del { width: 48px; height: 48px; min-height: 48px; padding: 0; font-size: 20px; }
+    /* Точки комнаты: по ним сканер называет место, по ним считается дневной
+       лимит и (дальше) подбирается эталонное фото. */
+    .spots { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .spot { display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px 8px 14px; border-radius: 999px;
+      background: var(--card); border: 2px solid var(--line); font-weight: 800; font-size: 15px; }
+    .spot button { border: none; background: none; cursor: pointer; font-size: 16px; line-height: 1;
+      min-width: 32px; min-height: 32px; border-radius: 999px; color: var(--muted); }
+    .spot button:hover { background: var(--line); color: var(--ink); }
+    .spot-add { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .spot-add .field { max-width: 220px; }
+    .sug { border-radius: 999px; padding: 6px 12px; min-height: 40px; font-size: 14px; border: 2px dashed var(--line);
+      background: none; cursor: pointer; font-weight: 800; color: var(--muted); }
+    .sug:hover { border-style: solid; color: var(--ink); }
     .floor-head { display: flex; gap: 10px; align-items: center; margin: 6px 0; }
     .floor-head .field { max-width: 320px; font-weight: 800; }
     .route-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
@@ -23,7 +37,7 @@
     .route-row .arrows .btn { min-height: 44px; width: 44px; padding: 0; }
     .step { display: none; }
     .step.on { display: block; }
-    @media (max-width: 620px) { .room { grid-template-columns: 48px 1fr; } .room select, .room .del { grid-column: span 1; } }
+    @media (max-width: 620px) { .room-head { grid-template-columns: 48px 1fr; } .room-head select { grid-column: 1 / -1; } }
   </style>
 </head>
 <body>
@@ -33,8 +47,13 @@
 
     <!-- Шаг 1. Описание дома текстом (§180). -->
     <section id="step-describe" class="step on col">
-      <p class="muted">Опиши свой дом одним текстом — приложение построит карту комнат. Можно как угодно, своими словами.</p>
-      <textarea id="home-text" class="field" placeholder="У нас двухэтажный дом. Внизу прихожая, кухня, столовая, гостиная и туалет. Наверху спальня родителей, комната Майи, комната мальчиков, ванная и детская ванная. Ещё есть прачечная и гараж."></textarea>
+      <p class="muted">
+        Опиши свой дом одним текстом — приложение построит карту комнат. Можно как угодно, своими словами.
+        <strong>Скажи заодно, что в комнатах убирают:</strong> стол, полка, кровать, тумбочка, раковина.
+        По этим точкам приложение узнаёт снятое место, считает дневной лимит и сравнивает с эталонным фото —
+        и всё это можно поправить на следующем шаге.
+      </p>
+      <textarea id="home-text" class="field" placeholder="У нас двухэтажный дом. Внизу прихожая, кухня со столешницей и обеденным столом, гостиная и туалет. Наверху спальня родителей, комната Майи — там письменный стол, книжная полка и кровать, — комната мальчиков и ванная."></textarea>
       <div class="row">
         <button id="btn-parse" class="btn btn-primary">Построить карту</button>
         <span id="parse-hint" class="muted"></span>
@@ -43,7 +62,11 @@
 
     <!-- Шаг 2. Подтверждение карты (§185): всё видно и правится. -->
     <section id="step-confirm" class="step col">
-      <p class="muted">Проверь и поправь: переименуй комнаты, задай эмодзи и тип, удали лишнее. Ничего не создаётся молча.</p>
+      <p class="muted">
+        Проверь и поправь: переименуй комнаты, задай эмодзи и тип, удали лишнее. Ничего не создаётся молча.
+        У каждой комнаты — <strong>точки</strong>, которые убирают по отдельности: их называет сканер, по ним
+        считается дневной лимит. Лишнюю точку убери крестиком, свою — допиши.
+      </p>
       <div id="floors" class="col"></div>
       <div class="row">
         <button id="btn-add-floor" class="btn btn-ghost">+ Этаж</button>
@@ -74,6 +97,7 @@
     import {
       ROOM_TYPES, roomTypeLabel, roomsInOrder, defaultRouteOrder, moveInArray,
       reconcileRouteOrder, makeSurfaceId,
+      normalizeSurfaces, surfaceSuggestions, MAX_SURFACES, MAX_SURFACE_NAME,
     } from './js/family-core.js';
 
     const $ = id => document.getElementById(id);
@@ -84,6 +108,7 @@
 
     let fid = null;
     let home = { floors: [] };
+    let focusRoom = null; // [этаж, комната] — куда вернуть курсор после перерисовки
     let routeOrder = [];
     let homeRoomId = null;
 
@@ -91,7 +116,8 @@
     function typeOptions(sel) {
       return ROOM_TYPES.map(t => `<option value="${t}" ${t === sel ? 'selected' : ''}>${esc(roomTypeLabel(t))}</option>`).join('');
     }
-    function renderFloors() {
+    function renderFloors(fi0 = null, ri0 = null) {
+      if (fi0 !== null) focusRoom = [fi0, ri0];
       $('floors').innerHTML = home.floors.map((fl, fi) => `
         <div class="card col" data-floor="${fi}">
           <div class="floor-head">
@@ -100,10 +126,25 @@
           </div>
           ${(fl.rooms || []).map((rm, ri) => `
             <div class="room" data-room="${ri}">
-              <input class="field emoji r-icon" value="${esc(rm.icon || '🏠')}" maxlength="2">
-              <input class="field r-name" value="${esc(rm.name)}" placeholder="Комната">
-              <select class="field r-type">${typeOptions(rm.type)}</select>
-              <button class="btn btn-ghost del r-del" title="Удалить">✕</button>
+              <div class="room-head">
+                <input class="field emoji r-icon" value="${esc(rm.icon || '🏠')}" maxlength="2">
+                <input class="field r-name" value="${esc(rm.name)}" placeholder="Комната">
+                <select class="field r-type">${typeOptions(rm.type)}</select>
+                <button class="btn btn-ghost del r-del" title="Удалить комнату">✕</button>
+              </div>
+              <div class="col" style="gap:8px">
+                <span class="muted" style="font-size:14px">Что тут убирают по отдельности:</span>
+                <div class="spots">
+                  ${(rm.surfaces || []).map((sf, si) => `
+                    <span class="spot">${esc(sf)}<button class="s-del" data-s="${si}" title="Убрать точку">✕</button></span>`).join('')
+                    || '<span class="muted" style="font-size:14px">Пока ни одной — сканер будет считать комнату целиком.</span>'}
+                </div>
+                <div class="spot-add">
+                  <input class="field s-new" placeholder="Своя точка" maxlength="${MAX_SURFACE_NAME}">
+                  <button class="btn btn-ghost s-add" style="min-height:44px">+ Добавить</button>
+                  ${freeSuggestions(rm).map(sg => `<button class="sug s-sug" data-sug="${esc(sg)}">+ ${esc(sg)}</button>`).join('')}
+                </div>
+              </div>
             </div>`).join('')}
           <button class="btn btn-ghost r-add">+ Комната</button>
         </div>`).join('');
@@ -112,19 +153,60 @@
       $('floors').querySelectorAll('[data-floor]').forEach(fEl => {
         const fi = +fEl.dataset.floor;
         fEl.querySelector('.f-name').oninput = e => { home.floors[fi].name = e.target.value; };
-        fEl.querySelector('.f-del').onclick = () => { home.floors.splice(fi, 1); renderFloors(); };
+        // Этаж уносит с собой все свои комнаты — такое молча не делают.
+        fEl.querySelector('.f-del').onclick = () => {
+          const n = (home.floors[fi].rooms || []).length;
+          if (n && !confirm(`Удалить этаж вместе с комнатами (${n})?`)) return;
+          home.floors.splice(fi, 1); renderFloors();
+        };
         fEl.querySelector('.r-add').onclick = () => {
           home.floors[fi].rooms.push({ id: makeSurfaceId('room', 'new'), name: '', type: 'other', icon: '🏠', surfaces: [], typical_clutter: [] });
           renderFloors();
         };
         fEl.querySelectorAll('[data-room]').forEach(rEl => {
           const ri = +rEl.dataset.room;
-          rEl.querySelector('.r-icon').oninput = e => { home.floors[fi].rooms[ri].icon = e.target.value; };
-          rEl.querySelector('.r-name').oninput = e => { home.floors[fi].rooms[ri].name = e.target.value; };
-          rEl.querySelector('.r-type').onchange = e => { home.floors[fi].rooms[ri].type = e.target.value; };
-          rEl.querySelector('.r-del').onclick = () => { home.floors[fi].rooms.splice(ri, 1); renderFloors(); };
+          const room = () => home.floors[fi].rooms[ri];
+          rEl.querySelector('.r-icon').oninput = e => { room().icon = e.target.value; };
+          rEl.querySelector('.r-name').oninput = e => { room().name = e.target.value; };
+          // Тип меняет и список предложенных точек — перерисовываем.
+          rEl.querySelector('.r-type').onchange = e => { room().type = e.target.value; renderFloors(); };
+          rEl.querySelector('.r-del').onclick = () => {
+            const nm = (room().name || '').trim();
+            if (nm && !confirm(`Удалить комнату «${nm}»? Уборки в истории останутся.`)) return;
+            home.floors[fi].rooms.splice(ri, 1); renderFloors();
+          };
+          // Точка не из этой комнаты (сканер напридумывал, или комнату
+          // переназвали) — убирается крестиком, без вопросов: это одна строка.
+          rEl.querySelectorAll('.s-del').forEach(b => {
+            b.onclick = () => { room().surfaces.splice(+b.dataset.s, 1); renderFloors(fi, ri); };
+          });
+          const add = (name) => {
+            const next = normalizeSurfaces([...(room().surfaces || []), name]);
+            if (next.length === (room().surfaces || []).length) {
+              toast(next.length >= MAX_SURFACES ? `Больше ${MAX_SURFACES} точек на комнату — это уже инвентаризация` : 'Такая точка уже есть');
+              return;
+            }
+            room().surfaces = next;
+            renderFloors(fi, ri);
+          };
+          rEl.querySelectorAll('.s-sug').forEach(b => { b.onclick = () => add(b.dataset.sug); });
+          const input = rEl.querySelector('.s-new');
+          rEl.querySelector('.s-add').onclick = () => { if (input.value.trim()) add(input.value); };
+          input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); if (input.value.trim()) add(input.value); } };
         });
       });
+      // Курсор возвращаем туда, где работали: без этого добавление точек
+      // превращается в «нажал — потерял поле».
+      if (focusRoom) {
+        const el = $('floors').querySelector(`[data-floor="${focusRoom[0]}"] [data-room="${focusRoom[1]}"] .s-new`);
+        if (el) el.focus();
+        focusRoom = null;
+      }
+    }
+    // Предлагаем только то, чего в комнате ещё нет.
+    function freeSuggestions(room) {
+      const have = new Set((room.surfaces || []).map(x => String(x).toLowerCase()));
+      return surfaceSuggestions(room.type).filter(sg => !have.has(sg.toLowerCase()));
     }
 
     // ── Шаг 3: маршрут ──
@@ -178,7 +260,11 @@
     $('btn-save').onclick = async () => {
       $('btn-save').disabled = true;
       try {
-        await saveHome(fid, { floors: home.floors, routeOrder, homeRoomId, updatedAt: new Date().toISOString() });
+        const floors = home.floors.map(fl => ({
+          ...fl,
+          rooms: (fl.rooms || []).map(rm => ({ ...rm, surfaces: normalizeSurfaces(rm.surfaces) })),
+        }));
+        await saveHome(fid, { floors, routeOrder, homeRoomId, updatedAt: new Date().toISOString() });
         toast('Карта сохранена');
         setTimeout(() => { location.href = 'index.html'; }, 800);
       } catch (e) { console.error(e); toast('Не удалось сохранить'); $('btn-save').disabled = false; }

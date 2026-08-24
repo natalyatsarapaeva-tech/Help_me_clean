@@ -14,6 +14,7 @@ import {
   sanitizeScan, sanitizeVerify, sanitizeHome, ZONE_IDS, zoneKind, normalizeZoneKind, zoneNeedsCloseup, clampPoint,
   roomTypeLabel, roomsInOrder, defaultRouteOrder, moveInArray, reconcileRouteOrder,
   VERIFY_LIMITS, missedPhrase,
+  MAX_SURFACES, normalizeSurfaceName, normalizeSurfaces, surfaceSuggestions,
   referenceCoverage,
 } from '../js/family-core.js';
 
@@ -395,4 +396,38 @@ test('словарь очагов: у каждого есть эмодзи, им
   assert.equal(normalizeZoneKind('нет такого'), 'other');
   assert.equal(zoneKind('wipe').instruction, 'Протри поверхность',
     'у протирания нет категории действия — текст берётся из словаря очагов');
+});
+
+
+// ── Точки комнаты ───────────────────────────────────────────────────────────
+test('точки комнаты: одинаковые названия — одна точка', () => {
+  assert.equal(normalizeSurfaceName('  стол  У  ОКНА '), 'Стол у окна');
+  assert.equal(normalizeSurfaceName('«Раковина»'), 'Раковина');
+  assert.equal(normalizeSurfaceName('   '), '');
+  // Сканеру велено брать название точки дословно — значит «Стол» и «стол»
+  // обязаны быть одной точкой, иначе лимит и эталон промахнутся.
+  assert.deepEqual(normalizeSurfaces(['Стол', 'стол ', 'СТОЛ', 'Полка']), ['Стол', 'Полка']);
+  assert.deepEqual(normalizeSurfaces(['', null, 'Пол']), ['Пол']);
+  assert.deepEqual(normalizeSurfaces('не массив'), []);
+  assert.equal(normalizeSurfaceName('а'.repeat(50)).length, 24, 'длинные названия обрезаются');
+  assert.equal(normalizeSurfaces(Array.from({ length: 20 }, (_, i) => `Точка ${i}`)).length, MAX_SURFACES);
+});
+
+test('подсказки точек — под тип комнаты', () => {
+  assert.ok(surfaceSuggestions('bathroom').includes('Раковина'));
+  assert.ok(surfaceSuggestions('bedroom_child').includes('Кровать'));
+  assert.ok(!surfaceSuggestions('kitchen').includes('Кровать'));
+  assert.deepEqual(surfaceSuggestions('нет такого'), surfaceSuggestions('other'), 'незнакомый тип — общие точки');
+  for (const t of ROOM_TYPES) {
+    const sg = surfaceSuggestions(t);
+    assert.ok(sg.length >= 3, t);
+    assert.deepEqual(normalizeSurfaces(sg), sg, `${t}: подсказки уже нормализованы`);
+  }
+});
+
+test('карта дома чистит точки на входе — модель повторяется', () => {
+  const home = sanitizeHome({ floors: [{ name: '1', rooms: [
+    { id: 'k', name: 'Кухня', type: 'kitchen', surfaces: ['стол', 'Стол', '  РАКОВИНА '] },
+  ] }] });
+  assert.deepEqual(home.floors[0].rooms[0].surfaces, ['Стол', 'Раковина']);
 });
