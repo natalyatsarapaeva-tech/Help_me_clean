@@ -3,12 +3,12 @@
  * офлайн-фолбэк. Cross-origin (Firestore, Storage, Worker) — мимо кэша.
  * Поднимай CACHE при выкатке, чтобы старый кэш сбрасывался.
  */
-const CACHE = 'tidy-v10';
+const CACHE = 'tidy-v11';
 const ASSETS = [
-  './', './index.html', './home.html', './children.html', './scan.html', './reference.html', './themes.html', './collection.html', './rewards.html', './shop.html',
+  './', './index.html', './home.html', './children.html', './scan.html', './reference.html', './themes.html', './collection.html', './rewards.html', './shop.html', './tasks.html', './inbox.html',
   './styles.css', './pwa.js', './manifest.json',
   './js/firebase.js', './js/store.js', './js/family-core.js', './js/i18n.js',
-  './js/pin.js', './js/profile-core.js', './js/image.js', './js/ai.js', './js/round-core.js', './js/camera.js', './js/cards-core.js', './js/shop-core.js', './js/limits-core.js', './js/bonus-core.js',
+  './js/pin.js', './js/profile-core.js', './js/image.js', './js/ai.js', './js/round-core.js', './js/camera.js', './js/cards-core.js', './js/shop-core.js', './js/limits-core.js', './js/bonus-core.js', './js/tasks-core.js',
   './icons/icon-192.png', './icons/icon-512.png',
 ];
 

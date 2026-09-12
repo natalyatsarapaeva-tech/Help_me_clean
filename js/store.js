@@ -8,10 +8,11 @@
 //                                     name/avatar/lastTheme/route + PIN-замок (хэш)
 //   families/{fid}/profiles/{pid}/progress/{sessionId}
 //   families/{fid}/profiles/{pid}/rewards/current
-//   families/{fid}/reference/{surfaceId}, /cards/{cardId}, /home/*, /settings/*
+//   families/{fid}/profiles/{pid}/tasks/{taskId}  — ход выполнения задания
+//   families/{fid}/reference/{surfaceId}, /cards/{cardId}, /tasks/{taskId}, /home/*, /settings/*
 //   families/{fid}/settings/app    — язык, темы семьи, PIN родителя, проверка по фото
 import {
-  db, doc, getDoc, setDoc, collection, getDocs, query, where,
+  db, doc, getDoc, setDoc, collection, getDocs, query, where, writeBatch,
   auth, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
   getRedirectResult, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
   authReady, projectId, deleteDoc,
@@ -387,6 +388,78 @@ export async function listAllRewards(fid) {
   return Promise.all(profiles.map(async p => ({
     profile: p,
     rewards: await getRewards(fid, p.id).catch(() => emptyRewards()),
+  })));
+}
+
+// ── Задания от родителя: текст, цена и исполнитель ───────────────────────────
+// Задание пишет РОДИТЕЛЬ (families/{fid}/tasks — правила те же, что у витрины
+// наград), а ход выполнения лежит в поддереве ребёнка: туда ему открыт доступ,
+// в каталог заданий — нет. Оба документа читает и тот, и другой.
+export async function listTasks(fid) {
+  const snap = await getDocs(collection(db, 'families', fid, 'tasks'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+export async function saveTask(fid, taskId, data) {
+  const doc_ = {
+    title: data.title || '',
+    note: data.note || '',
+    cost: Number(data.cost) || 0,
+    profileId: data.profileId || '',
+    roomId: data.roomId || null,
+    roomName: data.roomName || '',
+    byUid: currentUid(),
+    createdAt: data.createdAt || new Date().toISOString(),
+  };
+  await setDoc(doc(db, 'families', fid, 'tasks', taskId), doc_, { merge: true });
+  return { id: taskId, ...doc_ };
+}
+// Фото отчёта — в Storage, рядом с эталонами и карточками (правила выданы на
+// families/{fid}/**). Одно задание — один исполнитель и одно фото: пересъёмка
+// перезаписывает файл, галерея попыток никому не нужна.
+function taskPhotoPath(fid, taskId) { return `families/${fid}/tasks/${taskId}.jpg`; }
+
+export async function uploadTaskPhoto(fid, taskId, blob, meta = {}) {
+  const path = taskPhotoPath(fid, taskId);
+  const fileRef = storageRef(storage, path);
+  await uploadBytes(fileRef, blob, { contentType: 'image/jpeg' });
+  return { url: await getDownloadURL(fileRef), path, w: meta.w || null, h: meta.h || null };
+}
+
+export async function listTaskRuns(fid, profileId) {
+  const snap = await getDocs(collection(db, 'families', fid, 'profiles', profileId, 'tasks'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+export async function saveTaskRun(fid, profileId, taskId, run) {
+  await setDoc(doc(db, 'families', fid, 'profiles', profileId, 'tasks', taskId), { ...run, taskId }, { merge: true });
+}
+// «Засчитать» — ДВЕ записи: отметка на задании и искорки в наградах ребёнка.
+// Порознь их писать нельзя: упади сеть между ними — либо родитель видит
+// незасчитанное задание и платит второй раз, либо задание закрыто, а искорок
+// нет и никто об этом не узнает. Батч коммитится целиком или никак.
+export async function commitTaskDecision(fid, profileId, taskId, run, rewards = null) {
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'families', fid, 'profiles', profileId, 'tasks', taskId), { ...run, taskId }, { merge: true });
+  if (rewards) batch.set(doc(db, 'families', fid, 'profiles', profileId, 'rewards', 'current'), rewards, { merge: true });
+  await batch.commit();
+}
+// Удаляя задание, уносим и файл, и запись у ребёнка: иначе в его «Входящих»
+// осталась бы строка без задания. Начисленные искорки при этом не отнимаются —
+// добытое не отбирают (§336).
+export async function deleteTask(fid, taskId, profileId) {
+  try { await deleteObject(storageRef(storage, taskPhotoPath(fid, taskId))); }
+  catch (e) { if (e?.code !== 'storage/object-not-found') throw e; }
+  if (profileId) {
+    await deleteDoc(doc(db, 'families', fid, 'profiles', profileId, 'tasks', taskId)).catch(e => console.warn('task run:', e));
+  }
+  await deleteDoc(doc(db, 'families', fid, 'tasks', taskId));
+}
+// Родителю — ход выполнения по всем детям сразу: из этого собирается очередь
+// проверки (та же форма, что у listAllRewards).
+export async function listAllTaskRuns(fid) {
+  const profiles = await listProfiles(fid);
+  return Promise.all(profiles.map(async p => ({
+    profile: p,
+    runs: await listTaskRuns(fid, p.id).catch(() => []),
   })));
 }
 

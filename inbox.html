@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title data-i18n="title.inbox">My tasks — Point &amp; Tidy</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#3A5DA8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .back { text-decoration: none; color: var(--muted); font-weight: 800; }
+    .step { display: none; }
+    .step.on { display: block; }
+    /* Задание — крупной карточкой: ребёнок читает одну строку, а не таблицу. */
+    .task { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; }
+    .task .what { font-size: 22px; font-weight: 800; line-height: 1.25; }
+    .task .btn { min-height: 60px; }
+    .task.sent { border-style: dashed; border-width: 3px; border-color: var(--accent); }
+    .task.done { opacity: .65; }
+    .back-note { border-left: 6px solid var(--accent); padding-left: 12px; }
+    .frame { position: relative; border-radius: var(--radius); overflow: hidden; background: #000; line-height: 0; max-width: 860px; }
+    .frame video, .frame img { display: block; width: 100%; max-height: 62vh; object-fit: contain; background: #000; }
+    .hint-over { position: absolute; left: 0; right: 0; top: 0; padding: 12px 16px; color: #fff; font-weight: 800;
+      background: linear-gradient(rgba(0,0,0,.55), transparent); line-height: 1.3; }
+    .shutter { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); width: 88px; height: 88px;
+      border-radius: 50%; border: 6px solid #fff; background: rgba(255,255,255,.28); cursor: pointer; box-shadow: 0 6px 20px rgba(0,0,0,.4); }
+    .shutter:active { transform: translateX(-50%) scale(.94); }
+    @media (max-width: 620px) { .task { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap col">
+    <!-- Список заданий. -->
+    <section id="step-list" class="step on col">
+      <div class="row" style="justify-content:space-between">
+        <a class="back" href="index.html" data-i18n="common.back">← Back</a>
+        <span class="chip" id="theme-chip">—</span>
+      </div>
+      <h1 data-i18n="inbox.title">My tasks</h1>
+      <p class="muted" data-i18n="inbox.sub">These are from your parents.</p>
+      <p class="muted" id="total"></p>
+
+      <div id="todo" class="col"></div>
+      <p class="muted hidden" id="empty" data-i18n="inbox.empty">No tasks right now.</p>
+
+      <div class="card col hidden" id="waiting-box">
+        <strong data-i18n="inbox.waitingTitle">Sent — waiting for the parents</strong>
+        <div class="muted" style="font-size:14px" data-i18n="inbox.waitingHint"></div>
+        <div id="waiting" class="col"></div>
+      </div>
+
+      <div class="card col hidden" id="done-box">
+        <strong data-i18n="inbox.doneTitle">Counted</strong>
+        <div id="done" class="col"></div>
+      </div>
+    </section>
+
+    <!-- Съёмка отчёта. Никакой проверки ИИ: фото смотрит родитель. -->
+    <section id="step-shoot" class="step col">
+      <h1 id="shoot-title" data-i18n="inbox.shootTitle">Photograph what you have done</h1>
+      <p class="muted" data-i18n="inbox.shootHint"></p>
+      <div class="frame" id="frame">
+        <video id="video" playsinline muted></video>
+        <div class="hint-over" id="shoot-what"></div>
+        <button class="shutter" id="btn-shot" data-i18n-aria-label="inbox.take" aria-label="Photograph it"></button>
+      </div>
+      <div class="row" id="cam-fallback" style="display:none">
+        <label class="btn btn-primary" style="max-width:340px">
+          <span data-i18n="inbox.take">📷 Photograph it</span>
+          <input id="file-input" type="file" accept="image/*" capture="environment" hidden>
+        </label>
+        <span class="muted" id="cam-error"></span>
+      </div>
+      <div class="row">
+        <button class="btn btn-ghost" id="btn-cancel" data-i18n="common.backToList">← Back to list</button>
+      </div>
+    </section>
+
+    <!-- Что уедет родителям. -->
+    <section id="step-preview" class="step col">
+      <h1 data-i18n="inbox.previewTitle">Send this photo?</h1>
+      <div class="frame"><img id="preview" alt=""></div>
+      <div class="row">
+        <button class="btn btn-primary" id="btn-send" data-i18n="inbox.send">Send to the parents</button>
+        <button class="btn btn-ghost" id="btn-retake" data-i18n="common.retake">Retake</button>
+      </div>
+    </section>
+
+    <div id="toast" class="toast"></div>
+  </div>
+
+  <script type="module">
+    import {
+      initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
+      getActiveProfileId, listTasks, listTaskRuns, uploadTaskPhoto, saveTaskRun,
+      getSettings, applyFamilyLang, applyFamilyThemes,
+    } from './js/store.js';
+    import { theme } from './js/family-core.js';
+    import { applyThemeVars } from './js/theme-apply.js';
+    import { startCamera, stopCamera, cameraErrorText } from './js/camera.js';
+    import { compressCard } from './js/image.js';
+    import { childInbox, runFor, submitTask } from './js/tasks-core.js';
+    import { t, applyI18n } from './js/i18n.js';
+
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const STEPS = ['step-list', 'step-shoot', 'step-preview'];
+    const show = id => STEPS.forEach(s => $(s).classList.toggle('on', s === id));
+    let toastTimer;
+    const toast = (m) => { const el = $('toast'); el.textContent = m; el.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), 2800); };
+
+    let th = theme(sessionStorage.getItem('tidy.todayTheme'));
+    applyThemeVars(th);
+    applyI18n();
+
+    let fid = null, profileId = null, tasks = [], runs = [], target = null, shot = null;
+
+    function taskCard(row, kind) {
+      const { task, run } = row;
+      const back = kind === 'todo' && run.status === 'returned';
+      return `
+        <div class="card task ${esc(kind)}" data-task="${esc(task.id)}">
+          <div class="col" style="gap:6px">
+            <div class="what">${esc(task.title)}</div>
+            ${task.note ? `<div class="muted">${esc(task.note)}</div>` : ''}
+            <div class="row" style="gap:8px">
+              <span class="chip">${esc(th.currencyEmoji)} ${task.cost}</span>
+              <span class="chip">${esc(task.roomName || t('inbox.noRoom'))}</span>
+            </div>
+            ${back ? `<div class="muted back-note">${esc(run.note
+              ? t('inbox.returnedNote', { note: run.note })
+              : t('inbox.returnedPlain'))}</div>` : ''}
+          </div>
+          ${kind === 'todo' ? `<button class="btn btn-primary go">${esc(t('inbox.take'))}</button>` : ''}
+        </div>`;
+    }
+
+    function render() {
+      const view = childInbox(tasks, runs, profileId);
+      $('todo').innerHTML = view.todo.map(r => taskCard(r, 'todo')).join('');
+      $('empty').classList.toggle('hidden', !!view.todo.length);
+      $('total').textContent = view.todo.length
+        ? t('inbox.todoTotal', { n: view.sparklesTodo, emoji: th.currencyEmoji }) : '';
+
+      $('waiting-box').classList.toggle('hidden', !view.waiting.length);
+      $('waiting').innerHTML = view.waiting.map(r => taskCard(r, 'sent')).join('');
+      $('done-box').classList.toggle('hidden', !view.done.length);
+      $('done').innerHTML = view.done.map(r => taskCard(r, 'done')).join('');
+
+      $('todo').querySelectorAll('[data-task]').forEach(el => {
+        el.querySelector('.go').onclick = () => openShoot(el.dataset.task);
+      });
+    }
+
+    // ── Съёмка ──
+    async function openShoot(taskId) {
+      target = tasks.find(x => x.id === taskId) || null;
+      if (!target) return;
+      $('shoot-what').textContent = target.title;
+      show('step-shoot');
+      try {
+        $('video').style.display = '';
+        $('btn-shot').style.display = '';
+        $('cam-fallback').style.display = 'none';
+        await startCamera($('video'));
+      } catch (e) {
+        // Камеру не дали — не тупик: остаётся кнопка «Сфотографировать»
+        // (<input capture>), тот же путь, что у эталонов.
+        console.warn('camera:', e);
+        $('video').style.display = 'none';
+        $('btn-shot').style.display = 'none';
+        $('cam-fallback').style.display = '';
+        $('cam-error').textContent = cameraErrorText(e);
+      }
+    }
+    function dropShot() {
+      if (shot?.url) URL.revokeObjectURL(shot.url);
+      shot = null;
+    }
+    async function capture(source) {
+      try {
+        const pic = await compressCard(source);
+        stopCamera();
+        dropShot();
+        shot = pic;
+        $('preview').src = pic.url;
+        show('step-preview');
+      } catch (e) { console.error(e); toast(t('inbox.captureFailed')); }
+    }
+    $('btn-shot').onclick = () => capture($('video'));
+    $('file-input').onchange = e => { const f = e.target.files?.[0]; if (f) capture(f); e.target.value = ''; };
+    $('btn-cancel').onclick = () => { stopCamera(); dropShot(); target = null; show('step-list'); };
+    $('btn-retake').onclick = () => { dropShot(); openShoot(target?.id); };
+
+    // Отправка: файл — в Storage, состояние — в своё поддерево. Проверять фото
+    // будет родитель своими глазами, поэтому никакого вызова ИИ тут нет.
+    $('btn-send').onclick = async () => {
+      if (!target || !shot) return;
+      $('btn-send').disabled = true;
+      $('btn-send').textContent = t('inbox.sending');
+      try {
+        const photo = await uploadTaskPhoto(fid, target.id, shot.blob, { w: shot.w, h: shot.h });
+        const res = submitTask(runFor(runs, target.id), photo);
+        if (res.error) throw new Error(res.error);
+        await saveTaskRun(fid, profileId, target.id, res.run);
+        runs = [...runs.filter(r => (r.id || r.taskId) !== target.id), { id: target.id, ...res.run }];
+        dropShot(); target = null;
+        render();
+        show('step-list');
+        toast(t('inbox.sent'));
+      } catch (e) {
+        console.error(e);
+        toast(t('inbox.sendFailed'));
+      } finally {
+        $('btn-send').disabled = false;
+        $('btn-send').textContent = t('inbox.send');
+      }
+    };
+
+    (async () => {
+      const user = await initAuth();
+      if (!user || !currentUid()) { location.href = 'index.html'; return; }
+      const families = await listMyFamilies();
+      fid = resolveActiveFamily(families) || getActiveFamilyId();
+      profileId = getActiveProfileId();
+      if (!fid || !profileId) { location.href = 'index.html'; return; }
+      const settings = await getSettings(fid).catch(() => null);
+      applyFamilyLang(settings); applyFamilyThemes(settings); applyI18n();
+      th = theme(sessionStorage.getItem('tidy.todayTheme'));
+      applyThemeVars(th);
+      $('theme-chip').textContent = `${th.currencyEmoji} ${th.label}`;
+      try {
+        [tasks, runs] = await Promise.all([listTasks(fid), listTaskRuns(fid, profileId)]);
+      } catch (e) { console.warn('inbox:', e); toast(t('inbox.loadFailed')); }
+      render();
+    })();
+  </script>
+  <script src="pwa.js"></script>
+</body>
+</html>

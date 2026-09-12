@@ -60,6 +60,12 @@ service cloud.firestore {
       match /settings/{d}  { allow read: if isMember(); allow write: if isParent(); }
       match /reference/{s} { allow read: if isMember(); allow write: if isParent(); }
       match /cards/{c}     { allow read: if isMember(); allow write: if isParent(); }
+      // Задания от родителя: текст, цена и исполнитель — родительские, поэтому
+      // и пишет их только родитель. Ход выполнения (фото, «ждёт проверки»)
+      // сюда НЕ пишется — он живёт в поддереве самого ребёнка
+      //   .../profiles/{pid}/tasks/{taskId},
+      // куда доступ у него и так есть.
+      match /tasks/{taskId} { allow read: if isMember(); allow write: if isParent(); }
       // Витрина реальных наград: цены назначает родитель, дети только смотрят.
       // Покупка НЕ пишет сюда — она списывает баланс в наградах самого ребёнка
       // (.../profiles/{pid}/rewards/current), куда у него и так есть доступ.

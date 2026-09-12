@@ -85,6 +85,9 @@
       </a>
 
       <div class="row">
+        <!-- Входящие задания от родителей: цифра на кнопке — сколько ждёт
+             самого ребёнка (отправленное на проверку он уже сделал). -->
+        <a class="btn btn-ghost" id="btn-tasks" href="inbox.html" data-i18n="child.tasks">📥 My tasks</a>
         <a class="btn btn-ghost" href="collection.html" data-i18n="child.collection">🃏 My collection</a>
         <a class="btn btn-ghost" href="shop.html" data-i18n="child.shop">🎁 Shop</a>
       </div>
@@ -114,6 +117,7 @@
         <a class="btn btn-ghost" href="children.html" data-i18n="parent.nav.children">🧒 Children</a>
         <a class="btn btn-ghost" href="reference.html" data-i18n="parent.nav.reference">📸 Reference shots</a>
         <a class="btn btn-ghost" href="themes.html" data-i18n="parent.nav.themes">🎨 Themes and collections</a>
+        <a class="btn btn-ghost" href="tasks.html" data-i18n="parent.nav.tasks">📋 Tasks</a>
         <a class="btn btn-ghost" href="rewards.html" data-i18n="parent.nav.rewards">🎁 Rewards</a>
       </div>
 
@@ -156,12 +160,13 @@
       getActiveProfileId, setActiveProfileId, clearActiveProfileId, resolveActiveProfile,
       isParentUnlocked, unlockParentArea, lockParentArea, setParentPin,
       getSettings, rememberChildTheme, getRewards, setFamilyLang, applyFamilyLang,
-      applyFamilyThemes,
+      applyFamilyThemes, listTasks, listTaskRuns,
     } from './js/store.js';
     import { theme, themeIds, cardsForTheme, rankForCleanups } from './js/family-core.js';
     import { applyThemeVars } from './js/theme-apply.js';
     import { normalizeProfiles, findProfile, isLocked, parentLock, parentAreaLocked } from './js/profile-core.js';
     import { verifyPin, isValidPin } from './js/pin.js';
+    import { inboxCount } from './js/tasks-core.js';
     import { t, getLang, setLang, applyI18n, renderLangSwitch } from './js/i18n.js';
 
     const $ = id => document.getElementById(id);
@@ -364,6 +369,14 @@
           cleanups: rewards.cleanupsTotal, rank: rankForCleanups(rewards.cleanupsTotal, th.id),
         });
       } catch (e) { console.warn(e); $('child-stats').textContent = t('child.statsFailed'); }
+      // Задания от родителей грузим отдельно: их может не быть ни одного, и
+      // упавший список не должен утащить за собой искорки и ранг.
+      $('btn-tasks').textContent = t('child.tasks');
+      try {
+        const [tasks, runs] = await Promise.all([listTasks(fid), listTaskRuns(fid, activeProfile.id)]);
+        const n = inboxCount(tasks, runs, activeProfile.id);
+        $('btn-tasks').textContent = n ? t('child.tasksN', { n }) : t('child.tasks');
+      } catch (e) { console.warn('tasks:', e); }
     }
 
     // ── Родительская панель ──

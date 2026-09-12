@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title data-i18n="title.tasks">Tasks — Point &amp; Tidy</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#3A5DA8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .back { text-decoration: none; color: var(--muted); font-weight: 800; }
+    /* Очередь проверки: фото — главное на строке, его и смотрят. */
+    .check-row { display: grid; grid-template-columns: 180px 1fr; gap: 14px; align-items: start; }
+    .check-row .shot { width: 180px; aspect-ratio: 4/3; object-fit: cover; border-radius: 14px; background: var(--line); display: block; }
+    .check-row .no-shot { width: 180px; aspect-ratio: 4/3; border-radius: 14px; background: var(--line);
+      display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; text-align: center; padding: 8px; }
+    .task-row { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; }
+    .task-row .btn { min-height: 52px; padding: 0 16px; }
+    .give-row { display: grid; grid-template-columns: 1fr 140px; gap: 12px; }
+    .who-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: center; }
+    .state { font-size: 13px; }
+    .state.sent { border-color: var(--accent); color: var(--accent); }
+    .state.done { opacity: .7; }
+    @media (max-width: 720px) {
+      .check-row { grid-template-columns: 1fr; }
+      .check-row .shot, .check-row .no-shot { width: 100%; }
+      .give-row, .who-row, .task-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap col">
+    <a class="back" href="index.html" data-i18n="common.back">← Back</a>
+    <h1 data-i18n="tasks.title">Tasks</h1>
+    <p class="muted" data-i18n-html="tasks.intro"></p>
+
+    <!-- Очередь проверки: фото от детей. Смотрит человек, не модель. -->
+    <section class="card col">
+      <strong data-i18n="tasks.queueTitle">Waiting for your check</strong>
+      <div id="queue" class="col"></div>
+    </section>
+
+    <!-- Новое задание: текст, цена, исполнитель, комната по желанию. -->
+    <section class="card col">
+      <strong data-i18n="tasks.addTitle">New task</strong>
+      <div class="give-row">
+        <input id="new-title" class="field" data-i18n-placeholder="tasks.titlePlaceholder" placeholder="" maxlength="80">
+        <input id="new-cost" class="field" type="number" min="1" max="999" step="1" data-i18n-placeholder="tasks.costPlaceholder" placeholder="">
+      </div>
+      <input id="new-note" class="field" data-i18n-placeholder="tasks.notePlaceholder" placeholder="" maxlength="200">
+      <div class="who-row">
+        <select id="new-who" class="field"></select>
+        <select id="new-room" class="field"></select>
+        <button id="btn-add" class="btn btn-primary" disabled data-i18n="common.loading">Loading…</button>
+      </div>
+      <div id="err" class="card hidden" style="border:2px solid #E53935;font-size:14px"></div>
+    </section>
+
+    <!-- Что уже выдано и в каком оно состоянии. -->
+    <section class="card col">
+      <strong data-i18n="tasks.listTitle">Given out</strong>
+      <div id="list" class="col"></div>
+    </section>
+
+    <div id="toast" class="toast"></div>
+  </div>
+
+  <script type="module">
+    import {
+      initAuth, currentUid, listMyFamilies, resolveActiveFamily, getActiveFamilyId,
+      listProfiles, listTasks, saveTask, deleteTask, listAllTaskRuns, getRewards,
+      commitTaskDecision, getHome, getSettings, isParentUnlocked, applyFamilyLang,
+    } from './js/store.js';
+    import { parentAreaLocked, normalizeProfiles } from './js/profile-core.js';
+    import { roomsInOrder } from './js/family-core.js';
+    import {
+      makeTaskId, normalizeTask, approveTask, returnTask, runFor,
+      reviewQueue, parentTasks,
+    } from './js/tasks-core.js';
+    import { t, applyI18n } from './js/i18n.js';
+
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    let toastTimer;
+    const toast = (m) => { const el = $('toast'); el.textContent = m; el.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), 2600); };
+    applyI18n();
+
+    const EVERYONE = '*';
+    let fid = null, profiles = [], rooms = [], tasks = [], entries = [], ready = false;
+
+    function setReady(on) {
+      ready = on;
+      $('btn-add').disabled = !on || !profiles.length;
+      $('btn-add').textContent = t(on ? 'common.add' : 'common.loading');
+    }
+    // Код Firestore/Storage — единственное, по чему понятно, чинить правила,
+    // связь или что-то третье. Поэтому показываем его как есть.
+    function showError(where, e) {
+      const code = e?.code || e?.name || '';
+      const hint = code === 'storage/unauthorized' ? t('err.storage')
+        : code === 'permission-denied' ? t('err.rules')
+        : (code === 'unavailable' ? t('err.offline') : '');
+      $('err').innerHTML = `<strong>${esc(where)}</strong><br>${esc(code || t('err.generic'))}: ${esc(e?.message || e)}${hint ? `<br><br>${esc(hint)}` : ''}`;
+      $('err').classList.remove('hidden');
+    }
+    const clearError = () => $('err').classList.add('hidden');
+
+    const profileName = (p) => `${p.avatar || '🧒'} ${p.name || p.id}`;
+    const when = (iso) => { try { return new Date(iso).toLocaleString(); } catch (_) { return ''; } };
+    function runsOf(profileId) {
+      return entries.find(e => e.profile.id === profileId)?.runs || [];
+    }
+
+    function renderPickers() {
+      $('new-who').innerHTML = profiles.map(p => `<option value="${esc(p.id)}">${esc(profileName(p))}</option>`).join('')
+        + (profiles.length > 1 ? `<option value="${EVERYONE}">${esc(t('tasks.everyone'))}</option>` : '');
+      // Комната — необязательная привязка: «вынести мусор» ни в одной не живёт.
+      $('new-room').innerHTML = `<option value="">${esc(t('tasks.anyRoom'))}</option>`
+        + rooms.map(r => `<option value="${esc(r.id)}">${esc(`${r.icon || '🏠'} ${r.name}`)}</option>`).join('');
+    }
+
+    // ── Очередь проверки ──
+    function renderQueue() {
+      const queue = reviewQueue(tasks, entries);
+      $('queue').innerHTML = queue.map(({ profile, task, run }) => `
+        <div class="check-row card" data-child="${esc(profile.id)}" data-task="${esc(task.id)}">
+          ${run.url
+            ? `<img class="shot" src="${esc(run.url)}" alt="${esc(t('tasks.photoAlt'))}" loading="lazy">`
+            : `<div class="no-shot">${esc(t('tasks.noPhoto'))}</div>`}
+          <div class="col">
+            <strong>${esc(task.title)}</strong>
+            ${task.note ? `<div class="muted">${esc(task.note)}</div>` : ''}
+            <div class="row" style="gap:8px">
+              <span class="chip">✨ ${task.cost}</span>
+              <span class="chip">${esc(profileName(profile))}</span>
+              ${task.roomName ? `<span class="chip">${esc(task.roomName)}</span>` : ''}
+            </div>
+            <div class="muted" style="font-size:14px">${esc(t('tasks.sentAt', { when: when(run.sentAt) }))}</div>
+            <div class="row" style="gap:8px">
+              <button class="btn btn-primary ok">${esc(t('tasks.approve'))}</button>
+              <button class="btn btn-ghost back-to-kid">${esc(t('tasks.return'))}</button>
+            </div>
+          </div>
+        </div>`).join('') || `<div class="muted">${esc(t('tasks.queueEmpty'))}</div>`;
+
+      $('queue').querySelectorAll('[data-task]').forEach(el => {
+        const childId = el.dataset.child, taskId = el.dataset.task;
+        el.querySelector('.ok').onclick = () => approve(childId, taskId, el);
+        el.querySelector('.back-to-kid').onclick = () => sendBack(childId, taskId, el);
+      });
+    }
+
+    // Засчитать: искорки ребёнку и отметка на задании — одной атомарной
+    // записью (см. commitTaskDecision), чтобы не заплатить дважды и не потерять
+    // начисление на упавшей сети.
+    async function approve(childId, taskId, el) {
+      const task = normalizeTask(tasks.find(x => x.id === taskId));
+      const entry = entries.find(e => e.profile.id === childId);
+      if (!task || !entry) return;
+      const btn = el.querySelector('.ok'); btn.disabled = true;
+      clearError();
+      try {
+        const rewards = await getRewards(fid, childId);
+        const res = approveTask(rewards, task, runFor(entry.runs, taskId));
+        if (res.error) { toast(t('tasks.approveFailed')); btn.disabled = false; return; }
+        await commitTaskDecision(fid, childId, taskId, res.run, res.rewards);
+        entry.runs = [...entry.runs.filter(r => (r.id || r.taskId) !== taskId), { id: taskId, ...res.run }];
+        renderQueue(); renderList();
+        toast(t('tasks.approved', { name: task.title, n: res.sparkles }));
+      } catch (e) {
+        console.error(e); toast(t('tasks.approveFailed'));
+        showError(t('tasks.approveFailedWhere'), e);
+        btn.disabled = false;
+      }
+    }
+
+    // Вернуть — не отказ, а «переделай»: без комментария это читается как
+    // «тебе не поверили», поэтому просим сказать, что именно поправить.
+    async function sendBack(childId, taskId, el) {
+      const entry = entries.find(e => e.profile.id === childId);
+      if (!entry) return;
+      const note = prompt(t('tasks.returnPrompt'), '');
+      if (note === null) return;
+      const btn = el.querySelector('.back-to-kid'); btn.disabled = true;
+      try {
+        const res = returnTask(runFor(entry.runs, taskId), note);
+        if (res.error) { btn.disabled = false; return; }
+        await commitTaskDecision(fid, childId, taskId, res.run);
+        entry.runs = [...entry.runs.filter(r => (r.id || r.taskId) !== taskId), { id: taskId, ...res.run }];
+        renderQueue(); renderList();
+        toast(t('tasks.returnedToast'));
+      } catch (e) {
+        console.error(e); toast(t('tasks.returnFailed'));
+        showError(t('tasks.returnFailed'), e);
+        btn.disabled = false;
+      }
+    }
+
+    // ── Выданные задания ──
+    function renderList() {
+      const rows = parentTasks(tasks, entries);
+      $('list').innerHTML = rows.map(({ task, profile, state }) => `
+        <div class="task-row" data-task="${esc(task.id)}" data-child="${esc(task.profileId)}">
+          <div>
+            <strong>${esc(task.title)}</strong>
+            <span class="muted">${esc(t('tasks.forChild', { name: profile ? profileName(profile) : t('tasks.unknownChild') }))}</span>
+            ${task.roomName ? `<span class="muted"> · ${esc(task.roomName)}</span>` : ''}
+          </div>
+          <span class="chip state ${esc(state)}">✨ ${task.cost} · ${esc(t(`tasks.state.${state}`))}</span>
+          <button class="btn btn-ghost drop">${esc(t('common.remove'))}</button>
+        </div>`).join('') || `<div class="muted">${esc(t(profiles.length ? 'tasks.listEmpty' : 'tasks.noChildren'))}</div>`;
+
+      $('list').querySelectorAll('[data-task]').forEach(el => {
+        el.querySelector('.drop').onclick = async () => {
+          const taskId = el.dataset.task, childId = el.dataset.child;
+          const task = tasks.find(x => x.id === taskId);
+          if (!confirm(t('tasks.confirmDelete', { name: task?.title || taskId }))) return;
+          try {
+            await deleteTask(fid, taskId, childId);
+            tasks = tasks.filter(x => x.id !== taskId);
+            const entry = entries.find(e => e.profile.id === childId);
+            if (entry) entry.runs = entry.runs.filter(r => (r.id || r.taskId) !== taskId);
+            renderQueue(); renderList();
+            toast(t('tasks.removed'));
+          } catch (e) { console.error(e); toast(t('tasks.removeFailed')); showError(t('tasks.removeFailed'), e); }
+        };
+      });
+    }
+
+    // ── Выдать задание ──
+    // «Каждому ребёнку» заводит ОТДЕЛЬНОЕ задание на каждого: одно задание —
+    // один исполнитель, иначе непонятно, кому достанутся искорки за одно фото.
+    $('btn-add').onclick = async () => {
+      if (!ready || !fid) { toast(t('tasks.stillLoading')); return; }
+      clearError();
+      const title = $('new-title').value.trim();
+      const note = $('new-note').value.trim();
+      const cost = parseInt($('new-cost').value, 10);
+      const who = $('new-who').value;
+      const roomId = $('new-room').value || null;
+      const room = rooms.find(r => r.id === roomId) || null;
+      if (!title) { toast(t('tasks.needTitle')); $('new-title').focus(); return; }
+      if (!Number.isFinite(cost) || cost < 1) { toast(t('tasks.needCost')); $('new-cost').focus(); return; }
+      const targets = who === EVERYONE ? profiles.map(p => p.id) : [who];
+      if (!targets.length || !targets[0]) { toast(t('tasks.needChild')); return; }
+      $('btn-add').disabled = true;
+      try {
+        for (const profileId of targets) {
+          const saved = await saveTask(fid, makeTaskId(title), {
+            title, note, cost, profileId, roomId, roomName: room ? room.name : '',
+          });
+          tasks = [...tasks, saved];
+        }
+        $('new-title').value = ''; $('new-note').value = ''; $('new-cost').value = '';
+        renderList();
+        toast(targets.length > 1
+          ? t('tasks.addedMany', { name: title, n: targets.length })
+          : t('tasks.added', { name: title, who: profileName(profiles.find(p => p.id === targets[0]) || {}) }));
+      } catch (e) {
+        console.error(e); toast(t('tasks.addFailed'));
+        showError(t('tasks.addFailedWhere'), e);
+      } finally { $('btn-add').disabled = false; }
+    };
+
+    // ── Старт: только для родителя ──
+    (async () => {
+      const user = await initAuth();
+      if (!user || !currentUid()) { location.href = 'index.html'; return; }
+      const families = await listMyFamilies();
+      fid = resolveActiveFamily(families) || getActiveFamilyId();
+      if (!fid) { showError(t('tasks.noFamily'), { code: 'no-family', message: t('tasks.noFamily') }); return; }
+      const settings = await getSettings(fid).catch(() => null);
+      applyFamilyLang(settings); applyI18n();
+      // Родительская часть под кодом: задан и не введён в этой сессии — на главную.
+      if (parentAreaLocked(settings) && !isParentUnlocked()) { location.href = 'index.html'; return; }
+      try {
+        profiles = normalizeProfiles(await listProfiles(fid));
+        const home = await getHome(fid).catch(() => null);
+        rooms = roomsInOrder(home);
+        tasks = await listTasks(fid);
+        entries = await listAllTaskRuns(fid);
+      } catch (e) { console.warn('tasks:', e); showError(t('tasks.loadFailed'), e); }
+      renderPickers();
+      renderQueue();
+      renderList();
+      setReady(true);
+    })();
+  </script>
+  <script src="pwa.js"></script>
+</body>
+</html>
