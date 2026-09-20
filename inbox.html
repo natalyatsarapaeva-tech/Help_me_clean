@@ -20,6 +20,10 @@
     .task.sent { border-style: dashed; border-width: 3px; border-color: var(--accent); }
     .task.done { opacity: .65; }
     .back-note { border-left: 6px solid var(--accent); padding-left: 12px; }
+    /* Серия — единственная цифра на карточке, которая растёт сама по себе:
+       пусть будет видно, что она горит. */
+    .chip.streak { border-color: #F0871E; color: #F0871E; }
+    .streak-note { font-size: 15px; }
     .frame { position: relative; border-radius: var(--radius); overflow: hidden; background: #000; line-height: 0; max-width: 860px; }
     .frame video, .frame img { display: block; width: 100%; max-height: 62vh; object-fit: contain; background: #000; }
     .hint-over { position: absolute; left: 0; right: 0; top: 0; padding: 12px 16px; color: #fff; font-weight: 800;
@@ -101,7 +105,7 @@
     import { applyThemeVars } from './js/theme-apply.js';
     import { startCamera, stopCamera, cameraErrorText } from './js/camera.js';
     import { compressCard } from './js/image.js';
-    import { childInbox, runFor, submitTask } from './js/tasks-core.js';
+    import { childInbox, runFor, submitTask, streakState } from './js/tasks-core.js';
     import { t, applyI18n } from './js/i18n.js';
 
     const $ = id => document.getElementById(id);
@@ -117,6 +121,22 @@
 
     let fid = null, profileId = null, tasks = [], runs = [], target = null, shot = null;
 
+    // Серия рядом с заданием: сколько уже подряд и сколько осталось до добавки.
+    // Ребёнку нужна не похвала, а цифра: «ещё два раза — и +10» держит лучше,
+    // чем «молодец, так держать».
+    function streakLine(task, run, kind) {
+      const s = streakState(task, run);
+      if (!s.repeating) return '';
+      const chips = [`<span class="chip">🔁 ${esc(t(`tasks.repeat.${task.repeat}`))}</span>`];
+      if (s.streak) chips.push(`<span class="chip streak">${esc(t('inbox.streak', { n: s.streak }))}</span>`);
+      const goal = t('inbox.streakNext', { n: s.next.need, bonus: s.next.bonus, emoji: th.currencyEmoji });
+      const note = kind === 'done'
+        ? t(`inbox.doneFor.${task.repeat}`)
+        : (s.atRisk ? t(`inbox.streakKeep.${task.repeat}`) : goal);
+      return `<div class="row" style="gap:8px">${chips.join('')}</div>
+        <div class="muted streak-note">${esc(note)}${kind !== 'done' && s.atRisk ? ` · ${esc(goal)}` : ''}</div>`;
+    }
+
     function taskCard(row, kind) {
       const { task, run } = row;
       const back = kind === 'todo' && run.status === 'returned';
@@ -129,6 +149,7 @@
               <span class="chip">${esc(th.currencyEmoji)} ${task.cost}</span>
               <span class="chip">${esc(task.roomName || t('inbox.noRoom'))}</span>
             </div>
+            ${streakLine(task, run, kind)}
             ${back ? `<div class="muted back-note">${esc(run.note
               ? t('inbox.returnedNote', { note: run.note })
               : t('inbox.returnedPlain'))}</div>` : ''}
@@ -202,7 +223,9 @@
       $('btn-send').textContent = t('inbox.sending');
       try {
         const photo = await uploadTaskPhoto(fid, target.id, shot.blob, { w: shot.w, h: shot.h });
-        const res = submitTask(runFor(runs, target.id), photo);
+        // task передаём, чтобы у повторяющегося задания отправка попала в
+        // сегодняшний период, а не упёрлась во вчерашнее «сделано».
+        const res = submitTask(runFor(runs, target.id), photo, { task: target });
         if (res.error) throw new Error(res.error);
         await saveTaskRun(fid, profileId, target.id, res.run);
         runs = [...runs.filter(r => (r.id || r.taskId) !== target.id), { id: target.id, ...res.run }];

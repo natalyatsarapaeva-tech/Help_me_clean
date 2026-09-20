@@ -20,13 +20,17 @@
     .task-row .btn { min-height: 52px; padding: 0 16px; }
     .give-row { display: grid; grid-template-columns: 1fr 140px; gap: 12px; }
     .who-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; align-items: center; }
+    .repeat-row { display: grid; grid-template-columns: 220px 1fr; gap: 12px; align-items: center; }
     .state { font-size: 13px; }
     .state.sent { border-color: var(--accent); color: var(--accent); }
     .state.done { opacity: .7; }
+    /* Серия — единственное, что стоит выделять цветом в списке: остальное
+       родитель читает, а это замечает. */
+    .streak { border-color: #F0871E; color: #F0871E; }
     @media (max-width: 720px) {
       .check-row { grid-template-columns: 1fr; }
       .check-row .shot, .check-row .no-shot { width: 100%; }
-      .give-row, .who-row, .task-row { grid-template-columns: 1fr; }
+      .give-row, .who-row, .task-row, .repeat-row { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -55,6 +59,13 @@
         <select id="new-room" class="field"></select>
         <button id="btn-add" class="btn btn-primary" disabled data-i18n="common.loading">Loading…</button>
       </div>
+      <!-- Как часто: разовая просьба или домашняя обязанность. Цена серии
+           написана рядом — добавка, о которой родитель не знал, не мотивирует
+           ни его, ни ребёнка. -->
+      <div class="repeat-row">
+        <select id="new-repeat" class="field"></select>
+        <span class="muted" id="repeat-note" style="font-size:14px"></span>
+      </div>
       <div id="err" class="card hidden" style="border:2px solid #E53935;font-size:14px"></div>
     </section>
 
@@ -76,8 +87,9 @@
     import { parentAreaLocked, normalizeProfiles } from './js/profile-core.js';
     import { roomsInOrder } from './js/family-core.js';
     import {
-      makeTaskId, normalizeTask, approveTask, returnTask, runFor,
-      reviewQueue, parentTasks,
+      makeTaskId, normalizeTask, approveTask, returnTask, runFor, currentRun,
+      reviewQueue, parentTasks, streakState,
+      REPEATS, STREAK_STEPS, STREAK_BONUS, isRepeating,
     } from './js/tasks-core.js';
     import { t, applyI18n } from './js/i18n.js';
 
@@ -119,6 +131,31 @@
       // Комната — необязательная привязка: «вынести мусор» ни в одной не живёт.
       $('new-room').innerHTML = `<option value="">${esc(t('tasks.anyRoom'))}</option>`
         + rooms.map(r => `<option value="${esc(r.id)}">${esc(`${r.icon || '🏠'} ${r.name}`)}</option>`).join('');
+      $('new-repeat').innerHTML = REPEATS
+        .map(r => `<option value="${esc(r)}">${esc(t(`tasks.repeat.${r}`))}</option>`).join('');
+      // Лестницу серии рисуем из самих констант ядра, а не переписываем в
+      // словарь: разойдутся — родитель пообещает не то, что приложение заплатит.
+      $('repeat-note').textContent = t('tasks.repeatNote', {
+        steps: STREAK_STEPS.map(n => t('tasks.repeatStep', { n, bonus: STREAK_BONUS[n] })).join(', '),
+      });
+      syncRepeatNote();
+    }
+    // Разовому заданию лестница серии не полагается — и рассказывать про неё
+    // нечего: обещание, которого не будет, хуже молчания.
+    function syncRepeatNote() {
+      $('repeat-note').classList.toggle('hidden', !isRepeating($('new-repeat').value));
+    }
+    $('new-repeat').onchange = syncRepeatNote;
+
+    // Подписи повтора и серии — общие для очереди и списка.
+    function repeatChip(task) {
+      return isRepeating(task.repeat) ? `<span class="chip">🔁 ${esc(t(`tasks.repeat.${task.repeat}`))}</span>` : '';
+    }
+    function streakChip(task, run) {
+      const s = streakState(task, run);
+      if (!s.repeating || (!s.streak && !s.best)) return '';
+      const best = s.best > s.streak ? ` · ${t('tasks.streakBest', { n: s.best })}` : '';
+      return `<span class="chip streak">${esc(t('tasks.streak', { n: s.streak }) + best)}</span>`;
     }
 
     // ── Очередь проверки ──
@@ -136,6 +173,8 @@
               <span class="chip">✨ ${task.cost}</span>
               <span class="chip">${esc(profileName(profile))}</span>
               ${task.roomName ? `<span class="chip">${esc(task.roomName)}</span>` : ''}
+              ${repeatChip(task)}
+              ${streakChip(task, run)}
             </div>
             <div class="muted" style="font-size:14px">${esc(t('tasks.sentAt', { when: when(run.sentAt) }))}</div>
             <div class="row" style="gap:8px">
@@ -163,12 +202,18 @@
       clearError();
       try {
         const rewards = await getRewards(fid, childId);
-        const res = approveTask(rewards, task, runFor(entry.runs, taskId));
+        // currentRun — чтобы у повторяющегося задания засчитался ЭТОТ период,
+        // а не тот, в котором его закрыли в прошлый раз.
+        const res = approveTask(rewards, task, currentRun(task, runFor(entry.runs, taskId)));
         if (res.error) { toast(t('tasks.approveFailed')); btn.disabled = false; return; }
         await commitTaskDecision(fid, childId, taskId, res.run, res.rewards);
         entry.runs = [...entry.runs.filter(r => (r.id || r.taskId) !== taskId), { id: taskId, ...res.run }];
         renderQueue(); renderList();
-        toast(t('tasks.approved', { name: task.title, n: res.sparkles }));
+        // Взятую ступень называем вслух: добавка, о которой не сказали, не
+        // добавка, а расхождение в цифрах.
+        toast(res.bonus
+          ? t('tasks.approvedStreak', { name: task.title, n: res.sparkles, streak: res.streak, bonus: res.bonus })
+          : t('tasks.approved', { name: task.title, n: res.sparkles }));
       } catch (e) {
         console.error(e); toast(t('tasks.approveFailed'));
         showError(t('tasks.approveFailedWhere'), e);
@@ -199,16 +244,24 @@
     }
 
     // ── Выданные задания ──
+    // «Засчитано» у повторяющегося задания — это «засчитано на сегодня», и
+    // родителю важно видеть разницу: завтра оно снова будет висеть.
+    function stateLabel(task, state) {
+      return state === 'done' && isRepeating(task.repeat)
+        ? t(`tasks.doneFor.${task.repeat}`) : t(`tasks.state.${state}`);
+    }
+
     function renderList() {
       const rows = parentTasks(tasks, entries);
-      $('list').innerHTML = rows.map(({ task, profile, state }) => `
+      $('list').innerHTML = rows.map(({ task, run, profile, state }) => `
         <div class="task-row" data-task="${esc(task.id)}" data-child="${esc(task.profileId)}">
           <div>
             <strong>${esc(task.title)}</strong>
             <span class="muted">${esc(t('tasks.forChild', { name: profile ? profileName(profile) : t('tasks.unknownChild') }))}</span>
             ${task.roomName ? `<span class="muted"> · ${esc(task.roomName)}</span>` : ''}
+            <div class="row" style="gap:6px;margin-top:4px">${repeatChip(task)}${streakChip(task, run)}</div>
           </div>
-          <span class="chip state ${esc(state)}">✨ ${task.cost} · ${esc(t(`tasks.state.${state}`))}</span>
+          <span class="chip state ${esc(state)}">✨ ${task.cost} · ${esc(stateLabel(task, state))}</span>
           <button class="btn btn-ghost drop">${esc(t('common.remove'))}</button>
         </div>`).join('') || `<div class="muted">${esc(t(profiles.length ? 'tasks.listEmpty' : 'tasks.noChildren'))}</div>`;
 
@@ -239,6 +292,7 @@
       const note = $('new-note').value.trim();
       const cost = parseInt($('new-cost').value, 10);
       const who = $('new-who').value;
+      const repeat = $('new-repeat').value;
       const roomId = $('new-room').value || null;
       const room = rooms.find(r => r.id === roomId) || null;
       if (!title) { toast(t('tasks.needTitle')); $('new-title').focus(); return; }
@@ -249,7 +303,7 @@
       try {
         for (const profileId of targets) {
           const saved = await saveTask(fid, makeTaskId(title), {
-            title, note, cost, profileId, roomId, roomName: room ? room.name : '',
+            title, note, cost, profileId, repeat, roomId, roomName: room ? room.name : '',
           });
           tasks = [...tasks, saved];
         }

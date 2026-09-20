@@ -404,6 +404,10 @@ export async function saveTask(fid, taskId, data) {
     title: data.title || '',
     note: data.note || '',
     cost: Number(data.cost) || 0,
+    // Повтор: разовое задание или обязанность на каждый день/неделю/месяц.
+    // Ход выполнения помнит период сам (см. js/tasks-core.js), поэтому здесь
+    // хранится только «как часто» — расписание, а не календарь.
+    repeat: data.repeat || 'none',
     profileId: data.profileId || '',
     roomId: data.roomId || null,
     roomName: data.roomName || '',
